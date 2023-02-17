@@ -1,0 +1,1 @@
+fd4928fd0e042bf7c4a3f7036507085fa9a9c344ed8feeab5747622aeb0000ad  ./target/wasm32-unknown-unknown/release/sender_receiver_code_challenge.wasm

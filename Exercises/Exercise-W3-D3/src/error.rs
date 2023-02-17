@@ -11,6 +11,13 @@ pub enum ContractError {
 
     #[error("Cannot send zero funds")]
     ZeroFunds {},
-    // Add any other custom errors you like here.
-    // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
+
+    #[error("Denom mismatch. Expected 'uluna'")]
+    DenomMismatch {},
+
+    #[error("Amount mismatch. Please check the amount sent and try again.")]
+    AmountMismatch {},
+
+    #[error("More than one token provided")]
+    MoreThanOneToken {},
 }
