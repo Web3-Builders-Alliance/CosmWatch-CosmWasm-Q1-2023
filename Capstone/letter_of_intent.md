@@ -41,20 +41,20 @@ Hiring freelancers online using centralized web2 technology is currently limited
 
 ## The better way to hire someone online: Hiring DApp
 
-### There will be two components to this solution:
+### There will be two components to this solution (completed in order below):
 
-- Smart contract
+1. Architect, write, test, and deploy the extended escrow smart contract with frontend interaction in mind
     - Contains the escrow-like logic of creating new agreements, updating existing agreements, and executing payouts for completed agreements and/or agreement milestones
     - These changes can either be done from the UI or direct API calls to the contract
     - If all milestones are completed and thereby paying out all funds for that agreement, the agreement is marked completed and becomes immutable automatically
-- Extension of the existing UI
+2. Extend the existing UI using the both the existing SBT and newly built extended escrow smart contracts (potentially leveraging a fork of Angel Protocol's open-sourced frontend)
     - The existing UI built by Eliseo will be used to browse and filter W3BA graduate SBTs by skills, cohort, etc...
-    - Extend to click on a graduate and view metadata (i.e. Image, name, description, skills, cohort, etc...) and facilitate a pretty interface to hire a graduate
+    - Extend the DApp to click on a graduate and view metadata (i.e. Image, name, description, skills, cohort, etc...) and provide a pretty and easy to use interface for hiring a graduate
     - Anyone can view and hire the graduate by connecting their wallet to the UI, but first the hiring party must propose a job consisting of a name, description, and at least one milestone (milestone = condition and payout amount) to the graduate.
     - The proposal creator will be expected to send the total payout amount to the contract to be locked until the proposal is accepted and miletones are met or the proposal is rejected by the graduate
     - The graduate can choose to either accept or reject this proposal through connecting their wallet to the UI and checking their inbox
     - In their inbox, the user can see all proposals new, in progress, or completed for the connected wallet
-    - Both the graduate and hiring party will have controls in which they can agree or disagree to execute milestone payouts
+    - Both the graduate and hiring party will have controls in which they can agree or disagree to execute milestone payouts or cancel the agreement entirely at any time
 
 ### By developing this decentralized platform, we can solve many of the problems listed above:
 
