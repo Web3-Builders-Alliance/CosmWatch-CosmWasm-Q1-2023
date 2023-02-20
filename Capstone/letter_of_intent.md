@@ -4,7 +4,7 @@
 
 ## **W3BA Graduate Hiring Contract and UI**
 
-Hiring freelancers online using centralized web2 technology is currently limited, expensive, and risky. To combat those issues, I am going to use a soulbound token (SBT) contract and extend an existing DApp built by Eliseo (capstone Q4 2022), where anyone can go browse W3BA graduates and their SBT's metadata in a pretty UI. 
+Hiring freelancers online using centralized web2 technology is currently limited, expensive, and risky. To combat those issues, I am going to use a soulbound token (SBT) contract and DApp built by Eliseo (capstone Q4 2022) and take it a step further, enabling anyone who visits the DApp to view graduate details and faciliate the hiring process using a new, escrow-like smart contract.
 
 ---
 
@@ -16,7 +16,7 @@ Hiring freelancers online using centralized web2 technology is currently limited
     - **What** milestones/tasks are to be completed
     - **When** they will happen (milestone dates, deadlines)
     - **How much** the freelancer should be rewarded at the specified time(s)
-- Charge expensive fees in order to facilitate the transaction
+- Charge expensive fees in order to facilitate the payout(s)
     - This can make hiring someone more expensive than originally expected
 - Offer limited flexibility in how a transaction is coordinated
     - Does the party hiring want one task and one payment?
@@ -34,14 +34,15 @@ Hiring freelancers online using centralized web2 technology is currently limited
     - There are no guarantees here either
 - There is no support like hiring through a web2 platform
     - If a transaction is disputed or a malicious actor is uncovered, the freelancer has very limited options, if any, to resolve the conflict
-- The freelancer/party getting paid is at the mercy of the numerous money transferring services
+- The freelancer/party getting paid is at the mercy of numerous money transferring services (PayPal, Venmo, Cash App, Zelle, etc...)
     - Fees are almost inevitable when sending money through a third-party service
     - This may mean the freelancer may not get the entire amount promised, if not explicitly defined in a contract/agreement
-- Sometimes ifficult to qualify a freelancer's level of skill
+- Sometimes difficult to qualify a freelancer's level of skill
 
 ## The better way to hire someone online: Hiring DApp
 
-There will be two components to this solution:
+### There will be two components to this solution:
+
 - Smart contract
     - Contains the escrow-like logic of creating new agreements, updating existing agreements, and executing payouts for completed agreements and/or agreement milestones
     - These changes can either be done from the UI or direct API calls to the contract
@@ -55,7 +56,7 @@ There will be two components to this solution:
     - In their inbox, the user can see all proposals new, in progress, or completed for the connected wallet
     - Both the graduate and hiring party will have controls in which they can agree or disagree to execute milestone payouts
 
-By developing this decentralized platform, we can solve many of the problems listed above:
+### By developing this decentralized platform, we can solve many of the problems listed above:
 
 - Introduce an independent and trusted third-party to replace platforms
     - This will ensure that when the appropriate conditions are met, the payout will go to the hired party automatically and directly from the contract
@@ -66,9 +67,13 @@ By developing this decentralized platform, we can solve many of the problems lis
 - Significantly reduce overhead by replacing platform fees with gas fees
     - Gas fees for executing a smart contract can be unpredictably pricier than sending tokens from one wallet to another
         - Despite this, the gas fees are a small fraction of the corresponding fee on a web2 hiring platform
-- Certified Web3 Builders Alliance SBT that verifies that a graduate is a dedicated developer with sufficient skill to complete high-quality, paid work
+- Certified Web3 Builders Alliance SBT that verifies that a graduate is a dedicated web3 developer with sufficient skill to complete high-quality, paid work
 
-Link to my initial brainstorm/mind map: [Here](https://docs.google.com/drawings/d/1G7j7yoXV2-VwnyyCZ5DMcuyZ5xSyws3anO7NSlVD_SI/edit?pli=1)
+<br>
+
+**Want a visual of my thought process?** Link to my initial brainstorm/mind map [here](https://docs.google.com/drawings/d/1G7j7yoXV2-VwnyyCZ5DMcuyZ5xSyws3anO7NSlVD_SI/edit?pli=1)
+
+<br>
 
 Thank you,<br>
 Max
