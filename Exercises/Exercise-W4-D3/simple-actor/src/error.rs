@@ -13,6 +13,12 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
+    #[error("Amount mismatch")]
+    AmountMismatch {},
+
+    #[error("No funds sent")]
+    NoFundsSent {},
+
     #[error("Amount has to be greater than zero")]
     InvalidAmount {},
 

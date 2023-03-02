@@ -7,6 +7,6 @@ pub const CONFIG: Item<Config> = Item::new("config");
 
 #[cw_serde]
 pub struct Config {
-    pub cw20_address: Addr,
+    pub cw20_address: Option<Addr>,
     pub owner: Addr,
 }

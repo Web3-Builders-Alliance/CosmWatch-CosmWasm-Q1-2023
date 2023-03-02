@@ -1,8 +1,8 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdResult, SubMsg,
-    Uint128, WasmMsg,
+    to_binary, Addr, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Reply, Response, StdResult,
+    SubMsg, Uint128, WasmMsg,
 };
 use cw2::set_contract_version;
 use cw20::{Cw20ExecuteMsg, MinterResponse};
@@ -11,7 +11,7 @@ use cw_utils::parse_reply_instantiate_data;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
-use crate::state::{CONFIG, LP_TOKEN};
+use crate::state::{Config, CONFIG, LP_TOKEN};
 
 // version info for migration info and a label for cw20 contract
 const CONTRACT_NAME: &str = "crates.io:simple-actor";
@@ -30,7 +30,13 @@ pub fn instantiate(
     // Contract migration name and version
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    // TODO: Initialize CONFIG state
+    // Initialize CONFIG state
+    let validated_owner: Addr = deps.api.addr_validate(&msg.owner)?;
+    let config = Config {
+        cw20_address: None,
+        owner: validated_owner,
+    };
+    CONFIG.save(deps.storage, &config)?;
 
     // Initialize LP_TOKEN state
     let token = Coin {
@@ -88,10 +94,18 @@ fn execute_deposit(
     amount: Uint128,
 ) -> Result<Response, ContractError> {
     // Check if sender sent funds
+    if info.funds.len() == 0 {
+        return Err(ContractError::NoFundsSent {});
+    }
 
     // Verify amount is more than 0
     if amount.is_zero() {
         return Err(ContractError::InvalidAmount {});
+    }
+
+    // Check for funds mismatch
+    if info.funds[0].amount != amount {
+        return Err(ContractError::AmountMismatch {});
     }
 
     // MINT THE AMOUNT OF TOKENS DEPOSITED
@@ -101,7 +115,7 @@ fn execute_deposit(
     let bin_msg: Binary = to_binary(&msg)?;
 
     // Construct wasm execute msg and respond with it
-    let contract_addr: String = CONFIG.load(deps.storage)?.cw20_address;
+    let contract_addr = CONFIG.load(deps.storage)?.cw20_address.into_string();
     let execute_msg = WasmMsg::Execute {
         contract_addr,
         msg: bin_msg,
