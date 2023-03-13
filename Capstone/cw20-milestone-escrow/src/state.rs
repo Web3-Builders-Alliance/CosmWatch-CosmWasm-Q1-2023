@@ -132,19 +132,27 @@ impl Escrow {
         });
     }
 
-    pub fn get_balance(&self) -> GenericBalance {
-        // loop through milestones and add up the amounts
-        let mut balance = GenericBalance::default();
-        for milestone in self.milestones.iter() {
-            if !milestone.complete {
-                balance.add_tokens(milestone.amount.clone().into());
-            }
-        }
-        balance
+    pub fn get_total_balance(&self, id: &str) -> GenericBalance {
+        get_total_balance_from(self.clone().milestones).unwrap()
     }
 }
 
 pub const ESCROWS: Map<&str, Escrow> = Map::new("escrow");
+
+pub fn get_total_balance_from(milestones: Vec<Milestone>) -> StdResult<GenericBalance> {
+    let mut total_balance = GenericBalance::default();
+    for milestone in milestones.iter() {
+        match milestone.amount {
+            native => total_balance.add_tokens(Balance::from(milestone.amount.native)),
+            cw20 => {
+                for token in milestone.amount.cw20 {
+                    total_balance.add_tokens(Balance::from(token));
+                }
+            }
+        }
+    }
+    Ok(total_balance)
+}
 
 /// This returns the list of ids for all registered escrows
 pub fn all_escrow_ids(storage: &dyn Storage) -> StdResult<Vec<String>> {
@@ -153,7 +161,7 @@ pub fn all_escrow_ids(storage: &dyn Storage) -> StdResult<Vec<String>> {
         .collect()
 }
 // This returns the list of ids for all milestones for a given escrow
-pub fn all_escrow_milestone_ids(storage: &dyn Storage, escrow_id: &str) -> StdResult<Vec<u64>> {
+pub fn all_escrow_milestone_ids(storage: &dyn Storage, escrow_id: &str) -> StdResult<Vec<String>> {
     let escrow = ESCROWS.load(storage, escrow_id)?;
     Ok(escrow.milestones.iter().map(|m| m.id).collect())
 }

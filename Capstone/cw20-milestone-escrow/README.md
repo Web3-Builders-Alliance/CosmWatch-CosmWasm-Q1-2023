@@ -1,9 +1,11 @@
-# CW20 Escrow
+# CW20 Milestone Escrow
 
-This is an escrow meta-contract that allows multiple users to
+This is an escrow milestones contract that allows multiple users to
 create independent escrows. Each escrow has a sender, recipient,
 and arbiter. It also has a unique id (for future calls to reference it)
-and an optional timeout.
+and an optional timeout. In each escrow, there exists a vector of at 
+least one milestone with id, title, description of what to be completed,
+amount, and if it has been completed.
 
 The basic function is the sender creates an escrow with funds.
 The arbiter may at any time decide to release the funds to either

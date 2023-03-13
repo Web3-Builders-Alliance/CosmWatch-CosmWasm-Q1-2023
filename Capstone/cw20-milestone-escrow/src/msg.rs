@@ -4,7 +4,7 @@ use cosmwasm_std::{Addr, Api, Coin, StdResult};
 
 use cw20::{Cw20Coin, Cw20ReceiveMsg};
 
-use crate::state::{GenericBalance, Milestone};
+use crate::state::{get_total_balance_from, GenericBalance, Milestone};
 
 #[cw_serde]
 pub struct InstantiateMsg {}
@@ -19,7 +19,7 @@ pub enum ExecuteMsg {
     SetRecipient { id: String, recipient: String },
     /// Approve sends all tokens to the recipient for a given milestone.
     /// Only the arbiter can do this
-    Approve {
+    ApproveMilestone {
         /// id is a human-readable name for the escrow from create
         id: String,
         milestone_id: String,
@@ -38,9 +38,7 @@ pub enum ExecuteMsg {
 pub enum ReceiveMsg {
     Create(CreateMsg),
     /// Adds all sent native tokens to the contract
-    TopUp {
-        id: String,
-    },
+    CreateMilestone(CreateMilestoneMsg),
 }
 
 #[cw_serde]
@@ -75,7 +73,7 @@ pub struct CreateMsg {
 #[cw_serde]
 pub struct CreateMilestoneMsg {
     /// id is a human-readable name for the escrow to use later
-    pub id: String,
+    pub escrow_id: String,
     /// Title of the milestone
     pub title: String,
     /// Longer description of the milestone, e.g. what conditions should be met
@@ -91,6 +89,16 @@ impl CreateMsg {
         match self.cw20_whitelist.as_ref() {
             Some(v) => v.iter().map(|h| api.addr_validate(h)).collect(),
             None => Ok(vec![]),
+        }
+    }
+
+    pub fn total_balance_from_milestones(&self) -> GenericBalance {
+        get_total_balance_from(self.milestones.clone()).unwrap()
+    }
+
+    pub fn total_balance_is_empty(&self) -> bool {
+        match self.total_balance_from_milestones() {
+            balance => balance.native.is_empty() && balance.cw20.is_empty(),
         }
     }
 }

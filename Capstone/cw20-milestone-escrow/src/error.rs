@@ -26,4 +26,7 @@ pub enum ContractError {
 
     #[error("Milestone not found")]
     MilestoneNotFound,
+
+    #[error("Milestones can't be empty")]
+    EmptyMilestones,
 }
