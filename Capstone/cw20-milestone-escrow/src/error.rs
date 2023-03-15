@@ -15,6 +15,12 @@ pub enum ContractError {
     #[error("Escrow is expired")]
     Expired {},
 
+    #[error("Escrow not found")]
+    NotFound {},
+
+    #[error("Address is invalid")]
+    InvalidAddress {},
+
     #[error("Send some coins to create an escrow")]
     EmptyBalance {},
 

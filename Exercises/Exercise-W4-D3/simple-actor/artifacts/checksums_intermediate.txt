@@ -1,0 +1,1 @@
+ea97756ec7bb8a825e0938612bbb33d526264f8b20bcdfd4aeede5a8d4533e29  ./target/wasm32-unknown-unknown/release/simple_actor.wasm

@@ -81,7 +81,7 @@ pub struct CreateMilestoneMsg {
     /// Amount of tokens to be released when the milestone is completed
     pub amount: GenericBalance,
     /// Whether the milestone has been completed or not
-    pub completed: bool,
+    pub is_completed: bool,
 }
 
 impl CreateMsg {
@@ -115,22 +115,37 @@ pub fn is_valid_name(name: &str) -> bool {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     /// Show all open escrows. Return type is ListResponse.
-    #[returns(ListResponse)]
+    #[returns(ListEscrowsResponse)]
     List {},
+
     /// Returns the details of the named escrow, error if not created
     /// Return type: DetailsResponse.
-    #[returns(DetailsResponse)]
-    Details { id: String },
+    #[returns(EscrowDetailsResponse)]
+    EscrowDetails { id: String },
+
+    // Returns the details for a milestone
+    #[returns(Milestone)]
+    MilestoneDetails { id: String, milestone_id: String },
+
+    /// Returns the details of all milestones for a given escrow
+    #[returns(ListMilestonesResponse)]
+    ListMilestones { id: String },
 }
 
 #[cw_serde]
-pub struct ListResponse {
+pub struct ListEscrowsResponse {
     /// list all registered ids
     pub escrows: Vec<String>,
 }
 
 #[cw_serde]
-pub struct DetailsResponse {
+pub struct ListMilestonesResponse {
+    /// list all registered milestone ids
+    pub milestones: Vec<String>,
+}
+
+#[cw_serde]
+pub struct EscrowDetailsResponse {
     /// id of this escrow
     pub id: String,
     /// arbiter can decide to approve or refund the escrow

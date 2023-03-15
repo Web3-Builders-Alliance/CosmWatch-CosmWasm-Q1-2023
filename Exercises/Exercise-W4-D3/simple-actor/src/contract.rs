@@ -108,6 +108,11 @@ fn execute_deposit(
         return Err(ContractError::AmountMismatch {});
     }
 
+    // Check if CW20 contract address is set
+    if CONFIG.load(deps.storage)?.cw20_address.is_none() {
+        return Err(ContractError::CWContractNotInitialized {});
+    }
+
     // MINT THE AMOUNT OF TOKENS DEPOSITED
     // Construct mint msg
     let recipient: String = info.sender.to_string();
@@ -115,7 +120,11 @@ fn execute_deposit(
     let bin_msg: Binary = to_binary(&msg)?;
 
     // Construct wasm execute msg and respond with it
-    let contract_addr = CONFIG.load(deps.storage)?.cw20_address.into_string();
+    let contract_addr: String = CONFIG
+        .load(deps.storage)?
+        .cw20_address
+        .unwrap()
+        .into_string();
     let execute_msg = WasmMsg::Execute {
         contract_addr,
         msg: bin_msg,
@@ -143,8 +152,9 @@ fn reply_init_cw20(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, Con
     let res = parse_reply_instantiate_data(msg)?;
 
     // Save the contract address to the state
-    let mut config = CONFIG.load(deps.storage)?;
-    config.cw20_address = deps.api.addr_validate(&res.contract_address)?;
+    let mut config: Config = CONFIG.load(deps.storage)?;
+    let validated_address: Addr = deps.api.addr_validate(&res.contract_address)?;
+    config.cw20_address = Some(validated_address);
     CONFIG.save(deps.storage, &config)?;
 
     Ok(Response::new())

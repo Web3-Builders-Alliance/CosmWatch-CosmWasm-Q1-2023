@@ -1,9 +1,11 @@
 use cosmwasm_schema::cw_serde;
-
-use cosmwasm_std::{Addr, Coin, Env, Order, StdResult, Storage, Timestamp};
+use cosmwasm_std::{Addr, Coin, Deps, Env, Order, StdResult, Storage, Timestamp};
+use cw20::{Balance, Cw20CoinVerified};
 use cw_storage_plus::Map;
 
-use cw20::{Balance, Cw20CoinVerified};
+use crate::ContractError;
+
+pub const ESCROWS: Map<&str, Escrow> = Map::new("escrow");
 
 #[cw_serde]
 #[derive(Default)]
@@ -18,7 +20,7 @@ pub struct Milestone {
     pub title: String,
     pub description: String,
     pub amount: GenericBalance,
-    pub complete: bool,
+    pub is_completed: bool,
 }
 
 impl GenericBalance {
@@ -79,7 +81,7 @@ pub struct Escrow {
     pub balance: GenericBalance,
     /// All possible contracts that we accept tokens from
     pub cw20_whitelist: Vec<Addr>,
-    // Milestones to be met to release funds
+    // Milestones to be met
     pub milestones: Vec<Milestone>,
 }
 
@@ -100,6 +102,10 @@ impl Escrow {
         false
     }
 
+    pub fn is_complete(&self) -> bool {
+        self.milestones.iter().all(|m| m.is_completed)
+    }
+
     pub fn human_whitelist(&self) -> Vec<String> {
         self.cw20_whitelist.iter().map(|a| a.to_string()).collect()
     }
@@ -110,7 +116,7 @@ impl Escrow {
             .map(|m| {
                 format!(
                     "id: {}\ntitle: {}\ndescription: {}\ncomplete: {}",
-                    m.id, m.title, m.description, m.complete
+                    m.id, m.title, m.description, m.is_completed
                 )
             })
             .collect()
@@ -128,8 +134,12 @@ impl Escrow {
             title,
             description,
             amount,
-            complete: false,
+            is_completed: false,
         });
+    }
+
+    pub fn get_milestone_by_id(&self, id: &str) -> Option<&Milestone> {
+        self.milestones.iter().find(|m| m.id == id)
     }
 
     pub fn get_total_balance(&self, id: &str) -> GenericBalance {
@@ -137,21 +147,26 @@ impl Escrow {
     }
 }
 
-pub const ESCROWS: Map<&str, Escrow> = Map::new("escrow");
-
 pub fn get_total_balance_from(milestones: Vec<Milestone>) -> StdResult<GenericBalance> {
     let mut total_balance = GenericBalance::default();
     for milestone in milestones.iter() {
-        match milestone.amount {
-            native => total_balance.add_tokens(Balance::from(milestone.amount.native)),
+        match &milestone.amount {
+            native => total_balance.add_tokens(Balance::from(milestone.amount.native.clone())),
             cw20 => {
-                for token in milestone.amount.cw20 {
+                for token in milestone.amount.cw20.clone() {
                     total_balance.add_tokens(Balance::from(token));
                 }
             }
         }
     }
     Ok(total_balance)
+}
+
+pub fn get_escrow_by_id(deps: &Deps, id: &String) -> Result<Escrow, ContractError> {
+    match ESCROWS.may_load(deps.storage, &id)? {
+        Some(escrow) => Ok(escrow),
+        None => Err(ContractError::NotFound {}),
+    }
 }
 
 /// This returns the list of ids for all registered escrows
@@ -163,7 +178,7 @@ pub fn all_escrow_ids(storage: &dyn Storage) -> StdResult<Vec<String>> {
 // This returns the list of ids for all milestones for a given escrow
 pub fn all_escrow_milestone_ids(storage: &dyn Storage, escrow_id: &str) -> StdResult<Vec<String>> {
     let escrow = ESCROWS.load(storage, escrow_id)?;
-    Ok(escrow.milestones.iter().map(|m| m.id).collect())
+    Ok(escrow.milestones.iter().map(|m| m.id.clone()).collect())
 }
 
 #[cfg(test)]

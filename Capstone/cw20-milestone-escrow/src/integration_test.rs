@@ -4,7 +4,9 @@ use cosmwasm_std::{coins, to_binary, Addr, Empty, Uint128};
 use cw20::{Cw20Coin, Cw20Contract, Cw20ExecuteMsg};
 use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 
-use crate::msg::{CreateMsg, DetailsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg};
+use crate::msg::{
+    CreateMsg, EscrowDetailsResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg,
+};
 
 pub fn contract_escrow() -> Box<dyn Contract<Empty>> {
     let contract = ContractWrapper::new(
@@ -95,6 +97,7 @@ fn escrow_happy_path_cw20_tokens() {
         end_height: None,
         end_time: None,
         cw20_whitelist: None,
+        milestones: Vec::new(),
     });
     let send_msg = Cw20ExecuteMsg::Send {
         contract: escrow_addr.to_string(),
@@ -126,9 +129,9 @@ fn escrow_happy_path_cw20_tokens() {
     assert_eq!(escrow_balance, Uint128::new(1200));
 
     // ensure escrow properly created
-    let details: DetailsResponse = router
+    let details: EscrowDetailsResponse = router
         .wrap()
-        .query_wasm_smart(&escrow_addr, &QueryMsg::Details { id: id.clone() })
+        .query_wasm_smart(&escrow_addr, &QueryMsg::EscrowDetails { id: id.clone() })
         .unwrap();
     assert_eq!(id, details.id);
     assert_eq!(arb, details.arbiter);
@@ -142,7 +145,10 @@ fn escrow_happy_path_cw20_tokens() {
     );
 
     // release escrow
-    let approve_msg = ExecuteMsg::Approve { id };
+    let approve_msg = ExecuteMsg::ApproveMilestone {
+        id,
+        milestone_id: "0".to_string(),
+    };
     let _ = router
         .execute_contract(arb, escrow_addr.clone(), &approve_msg, &[])
         .unwrap();

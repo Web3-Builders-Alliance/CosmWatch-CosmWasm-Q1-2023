@@ -13,6 +13,9 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized {},
 
+    #[error("CW20 contract not initialized: Contract address is not available")]
+    CWContractNotInitialized {},
+
     #[error("Amount mismatch")]
     AmountMismatch {},
 
