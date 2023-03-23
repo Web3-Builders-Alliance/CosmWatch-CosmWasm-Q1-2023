@@ -7,11 +7,18 @@ use crate::ContractError;
 
 pub const ESCROWS: Map<&str, Escrow> = Map::new("escrow");
 
-#[cw_serde]
-#[derive(Default)]
-pub struct GenericBalance {
-    pub native: Vec<Coin>,
-    pub cw20: Vec<Cw20CoinVerified>,
+macro_rules! is_expired {
+    ($self:ident, $env:ident) => {{
+        (if let Some(end_height) = $self.end_height {
+            $env.block.height > end_height
+        } else {
+            false
+        }) || (if let Some(end_time) = $self.end_time {
+            $env.block.time > Timestamp::from_seconds(end_time)
+        } else {
+            false
+        })
+    }};
 }
 
 #[cw_serde]
@@ -20,7 +27,42 @@ pub struct Milestone {
     pub title: String,
     pub description: String,
     pub amount: GenericBalance,
+    pub end_height: Option<u64>,
+    pub end_time: Option<u64>,
     pub is_completed: bool,
+}
+
+impl Milestone {
+    pub fn is_empty(&self) -> bool {
+        match &self.amount {
+            balance => balance.native.is_empty() && balance.cw20.is_empty(),
+        }
+    }
+
+    pub fn is_expired(&self, env: &Env) -> bool {
+        is_expired!(self, env)
+    }
+
+    pub fn extend_expiration(&mut self, end_height: Option<u64>, end_time: Option<u64>) {
+        // Check if new time is in the past
+        if end_height < self.end_height || end_time < self.end_time {
+            return;
+        }
+
+        if let Some(height) = end_height {
+            self.end_height = Some(height);
+        }
+        if let Some(time) = end_time {
+            self.end_time = Some(time);
+        }
+    }
+}
+
+#[cw_serde]
+#[derive(Default)]
+pub struct GenericBalance {
+    pub native: Vec<Coin>,
+    pub cw20: Vec<Cw20CoinVerified>,
 }
 
 impl GenericBalance {
@@ -87,19 +129,7 @@ pub struct Escrow {
 
 impl Escrow {
     pub fn is_expired(&self, env: &Env) -> bool {
-        if let Some(end_height) = self.end_height {
-            if env.block.height > end_height {
-                return true;
-            }
-        }
-
-        if let Some(end_time) = self.end_time {
-            if env.block.time > Timestamp::from_seconds(end_time) {
-                return true;
-            }
-        }
-
-        false
+        is_expired!(self, env)
     }
 
     pub fn is_complete(&self) -> bool {
@@ -128,6 +158,8 @@ impl Escrow {
         title: String,
         description: String,
         amount: GenericBalance,
+        end_height: Option<u64>,
+        end_time: Option<u64>,
     ) {
         self.milestones.push(Milestone {
             id,
@@ -135,6 +167,8 @@ impl Escrow {
             description,
             amount,
             is_completed: false,
+            end_height,
+            end_time,
         });
     }
 
@@ -142,11 +176,26 @@ impl Escrow {
         self.milestones.iter().find(|m| m.id == id)
     }
 
-    pub fn get_total_balance(&self, id: &str) -> GenericBalance {
+    pub fn get_total_balance(&self) -> GenericBalance {
         get_total_balance_from(self.clone().milestones).unwrap()
+    }
+
+    pub fn get_total_end_height(&self) -> Option<u64> {
+        get_total_end_height(self.clone().milestones)
+    }
+
+    pub fn get_total_end_time(&self) -> Option<u64> {
+        get_total_end_time(self.clone().milestones)
+    }
+
+    pub fn update_calculated_properties(&mut self) {
+        self.balance = self.get_total_balance();
+        self.end_height = self.get_total_end_height();
+        self.end_time = self.get_total_end_time();
     }
 }
 
+// Helper functions
 pub fn get_total_balance_from(milestones: Vec<Milestone>) -> StdResult<GenericBalance> {
     let mut total_balance = GenericBalance::default();
     for milestone in milestones.iter() {
@@ -160,6 +209,22 @@ pub fn get_total_balance_from(milestones: Vec<Milestone>) -> StdResult<GenericBa
         }
     }
     Ok(total_balance)
+}
+
+pub fn get_total_end_height(milestones: Vec<Milestone>) -> Option<u64> {
+    milestones
+        .iter()
+        .filter(|m| m.end_height.is_some())
+        .map(|m| m.end_height.unwrap())
+        .max()
+}
+
+pub fn get_total_end_time(milestones: Vec<Milestone>) -> Option<u64> {
+    milestones
+        .iter()
+        .filter(|m| m.end_time.is_some())
+        .map(|m| m.end_time.unwrap())
+        .max()
 }
 
 pub fn get_escrow_by_id(deps: &Deps, id: &String) -> Result<Escrow, ContractError> {

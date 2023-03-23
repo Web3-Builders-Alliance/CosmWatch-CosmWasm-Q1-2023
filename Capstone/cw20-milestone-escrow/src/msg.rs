@@ -4,7 +4,9 @@ use cosmwasm_std::{Addr, Api, Coin, StdResult};
 
 use cw20::{Cw20Coin, Cw20ReceiveMsg};
 
-use crate::state::{get_total_balance_from, GenericBalance, Milestone};
+use crate::state::{
+    get_total_balance_from, get_total_end_height, get_total_end_time, GenericBalance, Milestone,
+};
 
 #[cw_serde]
 pub struct InstantiateMsg {}
@@ -23,6 +25,20 @@ pub enum ExecuteMsg {
         /// id is a human-readable name for the escrow from create
         id: String,
         milestone_id: String,
+    },
+    // Extend the escrow by the given time
+    ExtendMilestone {
+        /// id is a human-readable name for the escrow from create
+        id: String,
+        // The milestone to extend
+        milestone_id: String,
+        /// When end height set and block height exceeds this value, the escrow is expired.
+        /// Once an escrow is expired, it can be returned to the original funder (via "refund").
+        end_height: Option<u64>,
+        /// When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and
+        /// block time exceeds this value, the escrow is expired.
+        /// Once an escrow is expired, it can be returned to the original funder (via "refund").
+        end_time: Option<u64>,
     },
     /// Refund returns all remaining tokens to the original sender,
     /// The arbiter can do this any time, or anyone can do this after a timeout
@@ -70,20 +86,6 @@ pub struct CreateMsg {
     pub milestones: Vec<Milestone>,
 }
 
-#[cw_serde]
-pub struct CreateMilestoneMsg {
-    /// id is a human-readable name for the escrow to use later
-    pub escrow_id: String,
-    /// Title of the milestone
-    pub title: String,
-    /// Longer description of the milestone, e.g. what conditions should be met
-    pub description: String,
-    /// Amount of tokens to be released when the milestone is completed
-    pub amount: GenericBalance,
-    /// Whether the milestone has been completed or not
-    pub is_completed: bool,
-}
-
 impl CreateMsg {
     pub fn addr_whitelist(&self, api: &dyn Api) -> StdResult<Vec<Addr>> {
         match self.cw20_whitelist.as_ref() {
@@ -101,6 +103,33 @@ impl CreateMsg {
             balance => balance.native.is_empty() && balance.cw20.is_empty(),
         }
     }
+
+    pub fn get_total_end_time(&self) -> Option<u64> {
+        get_total_end_time(self.clone().milestones)
+    }
+
+    pub fn get_total_end_height(&self) -> Option<u64> {
+        get_total_end_height(self.clone().milestones)
+    }
+}
+
+#[cw_serde]
+pub struct CreateMilestoneMsg {
+    /// id is a human-readable name for the escrow to use later
+    pub escrow_id: String,
+    /// Title of the milestone
+    pub title: String,
+    /// Longer description of the milestone, e.g. what conditions should be met
+    pub description: String,
+    /// Amount of tokens to be released when the milestone is completed
+    pub amount: GenericBalance,
+    /// Whether the milestone has been completed or not
+    pub is_completed: bool,
+    /// When end height set and block height exceeds this value, the escrow is expired.
+    pub end_height: Option<u64>,
+    /// When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and
+    /// block time exceeds this value, the escrow is expired.
+    pub end_time: Option<u64>,
 }
 
 pub fn is_valid_name(name: &str) -> bool {

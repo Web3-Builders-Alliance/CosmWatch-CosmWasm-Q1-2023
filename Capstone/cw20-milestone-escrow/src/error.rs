@@ -33,6 +33,9 @@ pub enum ContractError {
     #[error("Milestone not found")]
     MilestoneNotFound,
 
+    #[error("Milestone is expired")]
+    MilestoneExpired {},
+
     #[error("Milestones can't be empty")]
     EmptyMilestones,
 }

@@ -1,4 +1,3 @@
-use cosmwasm_schema::serde::de::Error;
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
@@ -52,6 +51,12 @@ pub fn execute(
         ExecuteMsg::ApproveMilestone { id, milestone_id } => {
             execute_approve_milestone(deps, env, info, id, milestone_id)
         }
+        ExecuteMsg::ExtendMilestone {
+            id,
+            milestone_id,
+            end_height,
+            end_time,
+        } => execute_extend_milestone(deps, env, info, id, milestone_id, end_height, end_time),
         ExecuteMsg::Refund { id } => execute_refund(deps, env, info, id),
         ExecuteMsg::Receive(msg) => execute_receive(deps, env, info, msg),
     }
@@ -87,6 +92,7 @@ pub fn execute_create(
     if msg.milestones.is_empty() {
         return Err(ContractError::EmptyMilestones {});
     }
+
     // check to make sure at least one milestone contains a balance
     if msg.total_balance_is_empty() {
         return Err(ContractError::EmptyBalance {});
@@ -99,6 +105,8 @@ pub fn execute_create(
         .recipient
         .and_then(|addr| deps.api.addr_validate(&addr).ok());
     let balance = msg.total_balance_from_milestones();
+    let end_time = msg.get_total_end_time();
+    let end_height = msg.get_total_end_height();
     let cw20_whitelist = msg.addr_whitelist(deps.api)?;
 
     // create the escrow
@@ -108,8 +116,8 @@ pub fn execute_create(
         source: sender.clone(),
         title: msg.title,
         description: msg.description,
-        end_height: msg.end_height,
-        end_time: msg.end_time,
+        end_height,
+        end_time,
         balance,
         cw20_whitelist,
         milestones: msg.milestones,
@@ -165,7 +173,17 @@ pub fn execute_create_milestone(
     let next_id = escrow.milestones.len() + 1;
 
     // Add milestone to escrow
-    escrow.create_milestone(next_id.to_string(), msg.title, msg.description, balance);
+    escrow.create_milestone(
+        next_id.to_string(),
+        msg.title,
+        msg.description,
+        balance,
+        msg.end_height,
+        msg.end_time,
+    );
+
+    // Update escrow balance and expiration
+    escrow.update_calculated_properties();
 
     // Save changes to escrow
     ESCROWS.save(deps.storage, &msg.escrow_id, &escrow)?;
@@ -232,6 +250,10 @@ pub fn execute_approve_milestone(
         .find(|m| m.id == milestone_id)
         .ok_or(ContractError::MilestoneNotFound {})?;
 
+    if milestone.is_expired(&env) {
+        return Err(ContractError::MilestoneExpired {});
+    }
+
     milestone.is_completed = true;
 
     // send milestone amount to recipient in a submessage
@@ -256,6 +278,55 @@ pub fn execute_approve_milestone(
                 ("milestone_id", milestone_id.as_str()),
             ]))
     }
+}
+
+pub fn execute_extend_milestone(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+    milestone_id: String,
+    end_height: Option<u64>,
+    end_time: Option<u64>,
+) -> Result<Response, ContractError> {
+    // fails if escrow doesn't exist
+    let mut escrow = get_escrow_by_id(&deps.as_ref(), &id)?;
+
+    if info.sender != escrow.arbiter {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    if escrow.is_expired(&env) {
+        return Err(ContractError::Expired {});
+    }
+
+    let milestone = escrow
+        .milestones
+        .iter_mut()
+        .find(|m| m.id == milestone_id)
+        .ok_or(ContractError::MilestoneNotFound {})?;
+
+    if milestone.is_expired(&env) {
+        return Err(ContractError::MilestoneExpired {});
+    }
+
+    if let Some(end_height) = end_height {
+        milestone.end_height = Some(end_height);
+    }
+    if let Some(end_time) = end_time {
+        milestone.end_time = Some(end_time);
+    }
+
+    // Update escrow balance and expiration
+    escrow.update_calculated_properties();
+
+    ESCROWS.save(deps.storage, &id, &escrow)?;
+
+    Ok(Response::new().add_attributes(vec![
+        ("action", "extend_milestone"),
+        ("id", id.as_str()),
+        ("milestone_id", milestone_id.as_str()),
+    ]))
 }
 
 pub fn execute_refund(
@@ -427,55 +498,13 @@ mod tests {
 
     use super::*;
 
-    const ANYONE: String = "anyone".to_string();
-    const ARBITER: String = "arbiter".to_string();
-    const SOURCE: String = "source".to_string();
-    const RECIPIENT: String = "recipient".to_string();
-    const ADDR1: String = "addr0001".to_string();
-    const ADDR2: String = "addr0002".to_string();
-    const ADDR3: String = "addr0003".to_string();
-
-    const MILESTONE1: Milestone = Milestone {
-        id: "milestone1".to_string(),
-        amount: GenericBalance {
-            native: coins(100, "tokens"),
-            cw20: vec![],
-        },
-        title: "milestone1".to_string(),
-        description: "milestone1-details".to_string(),
-        is_completed: false,
-    };
-    const MILESTONE2: Milestone = Milestone {
-        id: "milestone2".to_string(),
-        amount: GenericBalance {
-            native: coins(100, "tokens"),
-            cw20: vec![],
-        },
-        title: "milestone2".to_string(),
-        description: "milestone2-details".to_string(),
-        is_completed: false,
-    };
-
-    const MILESTONE1_COMPLETE: Milestone = Milestone {
-        id: "milestone1".to_string(),
-        amount: GenericBalance {
-            native: coins(100, "tokens"),
-            cw20: vec![],
-        },
-        title: "milestone1".to_string(),
-        description: "milestone1-details".to_string(),
-        is_completed: false,
-    };
-    const MILESTONE2_COMPLETE: Milestone = Milestone {
-        id: "milestone2".to_string(),
-        amount: GenericBalance {
-            native: coins(100, "tokens"),
-            cw20: vec![],
-        },
-        title: "milestone2".to_string(),
-        description: "milestone2-details".to_string(),
-        is_completed: false,
-    };
+    const ANYONE: &str = "anyone";
+    const ARBITER: &str = "arbiter";
+    const SOURCE: &str = "source";
+    const RECIPIENT: &str = "recipient";
+    const ADDR1: &str = "addr0001";
+    const ADDR2: &str = "addr0002";
+    const ADDR3: &str = "addr0003";
 
     #[test]
     fn happy_path_native() {
@@ -493,8 +522,8 @@ mod tests {
         // create an escrow
         let create_msg = CreateMsg {
             id: "foobar".to_string(),
-            arbiter: ARBITER,
-            recipient: Some(RECIPIENT),
+            arbiter: ARBITER.to_string(),
+            recipient: Some(RECIPIENT.to_string()),
             title: "some_title".to_string(),
             end_time: None,
             end_height: Some(123456),
