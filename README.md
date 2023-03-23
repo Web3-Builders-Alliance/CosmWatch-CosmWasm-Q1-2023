@@ -1,8 +1,8 @@
 # Contents
 
-## 🏆 [Captstone](./Capstone/)
+## 🏆 [Capstone](./Capstone/)
 
-- W3BA Project Marketplace
+- W3BA Task Marketplace
 
 ## 🔖 [PreReqs](./PreReqs/)
 
