@@ -2,7 +2,8 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 use cosmwasm_std::{Addr, Api, Coin, StdResult};
 
-use cw20::{Cw20Coin, Cw20ReceiveMsg};
+use cw20::{Balance, Cw20Coin, Cw20CoinVerified, Cw20ReceiveMsg};
+use cw_utils::NativeBalance;
 
 use crate::state::{
     get_total_balance_from, get_total_end_height, get_total_end_time, GenericBalance, Milestone,
@@ -72,14 +73,6 @@ pub struct CreateMsg {
     pub description: String,
     /// When end height set and block height exceeds this value, the escrow is expired.
     /// Once an escrow is expired, it can be returned to the original funder (via "refund").
-    pub end_height: Option<u64>,
-    /// When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and
-    /// block time exceeds this value, the escrow is expired.
-    /// Once an escrow is expired, it can be returned to the original funder (via "refund").
-    pub end_time: Option<u64>,
-    /// Besides any possible tokens sent with the CreateMsg, this is a list of all cw20 token addresses
-    /// that are accepted by the escrow during a top-up. This is required to avoid a DoS attack by topping-up
-    /// with an invalid cw20 contract. See https://github.com/CosmWasm/cosmwasm-plus/issues/19
     pub cw20_whitelist: Option<Vec<String>>,
     /// List of milestones
     /// Each milestone has a title, description, amount, and whether it has been completed or not
@@ -101,6 +94,21 @@ impl CreateMsg {
     pub fn total_balance_is_empty(&self) -> bool {
         match self.total_balance_from_milestones() {
             balance => balance.native.is_empty() && balance.cw20.is_empty(),
+        }
+    }
+
+    // Check sent balance against total milestones balance
+    pub fn total_balance_is_valid(&self, deposit_balance: Balance) -> bool {
+        let total_balance_from_milestones = self.total_balance_from_milestones();
+        let native_deposit_balance =
+            Balance::Native(NativeBalance(total_balance_from_milestones.native));
+        let cw20_deposit_balance = Balance::Cw20(total_balance_from_milestones.cw20[0]);
+
+        match deposit_balance {
+            Balance::Native(native_balance) => {
+                native_balance == NativeBalance(total_balance_from_milestones.native)
+            }
+            Balance::Cw20(cw20_balance) => cw20_balance,
         }
     }
 

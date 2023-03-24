@@ -24,6 +24,9 @@ pub enum ContractError {
     #[error("Send some coins to create an escrow")]
     EmptyBalance {},
 
+    #[error("Funds sent does not equal the total amount of all milestones")]
+    FundsMismatch {},
+
     #[error("Escrow id already in use")]
     AlreadyInUse {},
 
