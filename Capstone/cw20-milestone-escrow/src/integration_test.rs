@@ -94,8 +94,6 @@ fn escrow_happy_path_cw20_tokens() {
         recipient: Some(ben.clone()),
         title: "some_title".to_string(),
         description: "some_description".to_string(),
-        end_height: None,
-        end_time: None,
         cw20_whitelist: None,
         milestones: Vec::new(),
     });

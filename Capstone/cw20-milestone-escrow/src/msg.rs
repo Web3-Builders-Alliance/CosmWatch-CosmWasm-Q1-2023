@@ -2,8 +2,7 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 
 use cosmwasm_std::{Addr, Api, Coin, StdResult};
 
-use cw20::{Balance, Cw20Coin, Cw20CoinVerified, Cw20ReceiveMsg};
-use cw_utils::NativeBalance;
+use cw20::{Balance, Cw20Coin, Cw20ReceiveMsg};
 
 use crate::state::{
     get_total_balance_from, get_total_end_height, get_total_end_time, GenericBalance, Milestone,
@@ -91,24 +90,25 @@ impl CreateMsg {
         get_total_balance_from(self.milestones.clone()).unwrap()
     }
 
-    pub fn total_balance_is_empty(&self) -> bool {
+    pub fn is_total_balance_empty(&self) -> bool {
         match self.total_balance_from_milestones() {
             balance => balance.native.is_empty() && balance.cw20.is_empty(),
         }
     }
 
     // Check sent balance against total milestones balance
-    pub fn total_balance_is_valid(&self, deposit_balance: Balance) -> bool {
+    // Only checks first token for each type
+    pub fn is_deposit_equal_to_milestones_balance(&self, deposit: Balance) -> bool {
         let total_balance_from_milestones = self.total_balance_from_milestones();
-        let native_deposit_balance =
-            Balance::Native(NativeBalance(total_balance_from_milestones.native));
-        let cw20_deposit_balance = Balance::Cw20(total_balance_from_milestones.cw20[0]);
-
-        match deposit_balance {
-            Balance::Native(native_balance) => {
-                native_balance == NativeBalance(total_balance_from_milestones.native)
+        match deposit {
+            Balance::Native(balance) => {
+                let total_balance = total_balance_from_milestones.native[0].amount;
+                balance.0[0].amount == total_balance
             }
-            Balance::Cw20(cw20_balance) => cw20_balance,
+            Balance::Cw20(balance) => {
+                let total_balance = total_balance_from_milestones.cw20[0].amount;
+                balance.amount == total_balance
+            }
         }
     }
 

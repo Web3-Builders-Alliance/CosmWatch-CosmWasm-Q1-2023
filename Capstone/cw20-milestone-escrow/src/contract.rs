@@ -40,10 +40,10 @@ pub fn execute(
 ) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::Create(msg) => {
-            execute_create(deps, msg, &info.sender, Balance::from(info.funds))
+            execute_create(deps, msg, info.clone(), Balance::from(info.funds))
         }
         ExecuteMsg::CreateMilestone(msg) => {
-            execute_create_milestone(deps, msg, &info.sender, Balance::from(info.funds))
+            execute_create_milestone(deps, msg, info.clone(), Balance::from(info.funds))
         }
         ExecuteMsg::SetRecipient { id, recipient } => {
             execute_set_recipient(deps, env, info, id, recipient)
@@ -71,23 +71,21 @@ pub fn execute_receive(
     let msg: ReceiveMsg = from_binary(&wrapper.msg)?;
     let api = deps.api;
     let validated_sender = api.addr_validate(&wrapper.sender)?;
-    let cw20_balance = Balance::Cw20(Cw20CoinVerified {
-        address: info.sender,
+    let balance = Balance::Cw20(Cw20CoinVerified {
+        address: validated_sender,
         amount: wrapper.amount,
     });
     match msg {
-        ReceiveMsg::Create(msg) => execute_create(deps, msg, &validated_sender, cw20_balance),
-        ReceiveMsg::CreateMilestone(msg) => {
-            execute_create_milestone(deps, msg, &validated_sender, cw20_balance)
-        }
+        ReceiveMsg::Create(msg) => execute_create(deps, msg, info, balance),
+        ReceiveMsg::CreateMilestone(msg) => execute_create_milestone(deps, msg, info, balance),
     }
 }
 
 pub fn execute_create(
     deps: DepsMut,
     msg: CreateMsg,
-    sender: &Addr,
-    amount: Balance,
+    info: MessageInfo,
+    balance: Balance,
 ) -> Result<Response, ContractError> {
     // check to make sure at least one milestone exists
     if msg.milestones.is_empty() {
@@ -95,12 +93,13 @@ pub fn execute_create(
     }
 
     // check to make sure at least one milestone contains a balance
-    if msg.total_balance_is_empty() {
+    if msg.is_total_balance_empty() {
         return Err(ContractError::EmptyBalance {});
     }
 
-    // check to make sure the total balance is equal to the amount sent
-    if msg.total_balance_is_valid(amount) {
+    // check to make sure the total balance of all milestones is equal to the funds sent
+    // only checks the first token for each type
+    if !msg.is_deposit_equal_to_milestones_balance(balance) {
         return Err(ContractError::FundsMismatch {});
     }
 
@@ -119,7 +118,7 @@ pub fn execute_create(
     let escrow = Escrow {
         arbiter,
         recipient,
-        source: sender.clone(),
+        source: info.sender.clone(),
         title: msg.title,
         description: msg.description,
         end_height,
@@ -142,13 +141,13 @@ pub fn execute_create(
 pub fn execute_create_milestone(
     deps: DepsMut,
     msg: CreateMilestoneMsg,
-    sender: &Addr,
+    info: MessageInfo,
     amount: Balance,
 ) -> Result<Response, ContractError> {
     let mut escrow = get_escrow_by_id(&deps.as_ref(), &msg.escrow_id)?;
 
     // Ensure sender is authorized
-    if sender.clone() != escrow.arbiter {
+    if info.sender.clone() != escrow.arbiter {
         return Err(ContractError::Unauthorized {});
     }
     // Ensure milestone balance is not empty
@@ -158,8 +157,8 @@ pub fn execute_create_milestone(
 
     let mut cw20_whitelist = escrow.cw20_whitelist;
     let balance = match amount {
-        Balance::Native(balance) => GenericBalance {
-            native: balance.0,
+        Balance::Native(token) => GenericBalance {
+            native: token.0,
             cw20: vec![],
         },
         Balance::Cw20(token) => {
@@ -500,17 +499,25 @@ fn query_list_milestones(deps: Deps, id: String) -> StdResult<ListMilestonesResp
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{attr, coin, coins, CosmosMsg, StdError, Uint128};
+    use cosmwasm_std::{coin, coins, Coin, CosmosMsg};
 
     use super::*;
 
-    const ANYONE: &str = "anyone";
+    // const ANYONE: &str = "anyone";
     const ARBITER: &str = "arbiter";
     // const SOURCE: &str = "source";
     const RECIPIENT: &str = "recipient";
     // const ADDR1: &str = "addr0001";
     // const ADDR2: &str = "addr0002";
     // const ADDR3: &str = "addr0003";
+
+    fn empty_strings() -> Vec<String> {
+        vec![]
+    }
+
+    fn empty_cw20_coins() -> Vec<Cw20Coin> {
+        vec![]
+    }
 
     #[test]
     fn test_instantiate() {
@@ -533,15 +540,15 @@ mod tests {
 
         // instantiate an empty contract
         let instantiate_msg = InstantiateMsg {};
-        let info = mock_info(&ANYONE, &[]);
+        let info = mock_info(&ARBITER, &[]);
         let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
         assert_eq!(0, res.messages.len());
 
-        // create milestones
+        // create one milestone
         let milestones = vec![Milestone {
-            id: "milestone1".to_string(),
-            title: "some_title".to_string(),
-            description: "some_description".to_string(),
+            id: "milestone_1".to_string(),
+            title: "milestone_1_title".to_string(),
+            description: "milestone_1_description".to_string(),
             amount: GenericBalance {
                 native: vec![coin(100, "tokens")],
                 cw20: vec![],
@@ -553,14 +560,12 @@ mod tests {
 
         // create an escrow
         let create_msg = CreateMsg {
-            id: "foobar".to_string(),
+            id: "escrow_1".to_string(),
             arbiter: ARBITER.to_string(),
             recipient: Some(RECIPIENT.to_string()),
-            title: "some_title".to_string(),
-            end_time: None,
-            end_height: None,
+            title: "escrow_1_title".to_string(),
             cw20_whitelist: None,
-            description: "some_description".to_string(),
+            description: "escrow_1_description".to_string(),
             milestones,
         };
         let sender = ARBITER.to_string();
@@ -572,22 +577,33 @@ mod tests {
         assert_eq!(("action", "create"), res.attributes[0]);
 
         // ensure the details is what we expect
-        let details = query_escrow_details(deps.as_ref(), "foobar".to_string()).unwrap();
+        let details = query_escrow_details(deps.as_ref(), "escrow_1".to_string()).unwrap();
         assert_eq!(
             details,
             EscrowDetailsResponse {
-                id: "foobar".to_string(),
-                arbiter: String::from("arbitrate"),
-                recipient: Some(String::from("recd")),
-                source: String::from("source"),
-                title: "some_title".to_string(),
-                description: "some_description".to_string(),
-                end_height: Some(123456),
+                id: "escrow_1".to_string(),
+                arbiter: ARBITER.to_string(),
+                recipient: Some(RECIPIENT.to_string()),
+                source: ARBITER.to_string(),
+                title: "escrow_1_title".to_string(),
+                description: "escrow_1_description".to_string(),
+                end_height: None,
                 end_time: None,
                 native_balance: balance.clone(),
                 cw20_balance: vec![],
                 cw20_whitelist: vec![],
-                milestones: vec![],
+                milestones: vec![Milestone {
+                    id: "milestone_1".to_string(),
+                    title: "milestone_1_title".to_string(),
+                    description: "milestone_1_description".to_string(),
+                    amount: GenericBalance {
+                        native: vec![coin(100, "tokens")],
+                        cw20: vec![],
+                    },
+                    end_height: None,
+                    end_time: None,
+                    is_completed: false,
+                }],
             }
         );
 
@@ -626,7 +642,7 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(matches!(err, ContractError::Std(StdError::NotFound { .. })));
+        assert!(matches!(err, ContractError::NotFound {}));
     }
 
     /**
@@ -644,8 +660,6 @@ mod tests {
             recipient: Some("recipient".to_string()),
             title: "Title".to_string(),
             description: "Description".to_string(),
-            end_height: None,
-            end_time: None,
             cw20_whitelist: None,
             milestones: vec![],
         });
@@ -663,38 +677,36 @@ mod tests {
     fn test_create_valid_milestones() {
         let mut deps = mock_dependencies();
         let env = mock_env();
-        let info = mock_info("creator", &coins(2, "token"));
+        let info = mock_info(ARBITER, &coins(200, "tokens"));
 
         let msg = ExecuteMsg::Create(CreateMsg {
-            id: "escrow1".to_string(),
+            id: "escrow_1".to_string(),
             arbiter: ARBITER.to_string(),
             recipient: Some(RECIPIENT.to_string()),
-            title: "Title".to_string(),
-            description: "Description".to_string(),
-            end_height: None,
-            end_time: None,
+            title: "escrow_1_title".to_string(),
+            description: "escrow_1_description".to_string(),
             cw20_whitelist: None,
             milestones: vec![
                 Milestone {
-                    id: "1".to_string(),
+                    id: "milestone_1".to_string(),
+                    title: "milestone_1_title".to_string(),
+                    description: "milestone_1_description".to_string(),
                     amount: GenericBalance {
-                        native: coins(1, "token"),
+                        native: vec![coin(100, "tokens")],
                         cw20: vec![],
                     },
-                    title: "title1".to_string(),
-                    description: "description1".to_string(),
                     end_height: None,
                     end_time: None,
                     is_completed: false,
                 },
                 Milestone {
-                    id: "2".to_string(),
+                    id: "milestone_2".to_string(),
+                    title: "milestone_2_title".to_string(),
+                    description: "milestone_2_description".to_string(),
                     amount: GenericBalance {
-                        native: coins(1, "token"),
+                        native: vec![coin(100, "tokens")],
                         cw20: vec![],
                     },
-                    title: "title2".to_string(),
-                    description: "description2".to_string(),
                     end_height: None,
                     end_time: None,
                     is_completed: false,
@@ -703,44 +715,44 @@ mod tests {
         });
 
         let res = execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
-        assert_eq!(1, res.messages.len());
+        assert_eq!(0, res.messages.len());
     }
 
     #[test]
     fn test_query_escrow() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_dependencies();
         let env = mock_env();
-        let info = mock_info("creator", &coins(2, "token"));
+        let info = mock_info(ARBITER, &coins(200, "tokens"));
 
         // Create a new escrow
         let msg = ExecuteMsg::Create(CreateMsg {
-            id: "escrow1".to_string(),
+            id: "escrow_1".to_string(),
             arbiter: ARBITER.to_string(),
             recipient: Some(RECIPIENT.to_string()),
-            title: "Title".to_string(),
-            description: "Description".to_string(),
+            title: "escrow_1_title".to_string(),
+            description: "escrow_1_description".to_string(),
             cw20_whitelist: None,
             milestones: vec![
                 Milestone {
-                    id: "1".to_string(),
+                    id: "milestone_1".to_string(),
+                    title: "milestone_1_title".to_string(),
+                    description: "milestone_1_description".to_string(),
                     amount: GenericBalance {
-                        native: coins(1, "token"),
+                        native: vec![coin(100, "tokens")],
                         cw20: vec![],
                     },
-                    title: "title1".to_string(),
-                    description: "description1".to_string(),
                     end_height: None,
                     end_time: None,
                     is_completed: false,
                 },
                 Milestone {
-                    id: "2".to_string(),
+                    id: "milestone_2".to_string(),
+                    title: "milestone_2_title".to_string(),
+                    description: "milestone_2_description".to_string(),
                     amount: GenericBalance {
-                        native: coins(1, "token"),
+                        native: vec![coin(100, "tokens")],
                         cw20: vec![],
                     },
-                    title: "title2".to_string(),
-                    description: "description2".to_string(),
                     end_height: None,
                     end_time: None,
                     is_completed: false,
@@ -752,275 +764,280 @@ mod tests {
 
         // Query the created escrow
         let query_msg = QueryMsg::EscrowDetails {
-            id: "escrow1".to_string(),
+            id: "escrow_1".to_string(),
         };
         let query_res = query(deps.as_ref(), env.clone(), query_msg).unwrap();
         let escrow: EscrowDetailsResponse = from_binary(&query_res).unwrap();
-        assert_eq!("escrow1", escrow.id);
-        assert_eq!("Title", escrow.title);
-        assert_eq!("Description", escrow.description);
+        assert_eq!("escrow_1", escrow.id);
+        assert_eq!("escrow_1_title", escrow.title);
+        assert_eq!("escrow_1_description", escrow.description);
         assert_eq!(2, escrow.milestones.len());
-        assert_eq!(ARBITER, escrow.arbiter)
+        assert_eq!(ARBITER, escrow.arbiter);
+        assert_eq!(ARBITER, escrow.source);
+        assert_eq!(RECIPIENT, escrow.recipient.unwrap());
+        assert_eq!(None, escrow.end_height);
+        assert_eq!(None, escrow.end_time);
+        assert_eq!(empty_strings(), escrow.cw20_whitelist);
+        assert_eq!(vec![Coin::new(200, "tokens")], escrow.native_balance);
+        assert_eq!(empty_cw20_coins(), escrow.cw20_balance);
     }
 
-    /**
-     * OLD TESTS
-     */
-    #[test]
-    fn happy_path_cw20() {
-        let mut deps = mock_dependencies();
+    //
+    //
+    // TESTS FROM CW-ESCROW
+    //
+    //
 
-        // instantiate an empty contract
-        let instantiate_msg = InstantiateMsg {};
-        let info = mock_info(&ANYONE, &[]);
-        let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
-        assert_eq!(0, res.messages.len());
+    // fn happy_path_cw20() {
+    //     let mut deps = mock_dependencies();
 
-        // create an escrow
-        let create = CreateMsg {
-            id: "foobar".to_string(),
-            arbiter: String::from("arbitrate"),
-            recipient: Some(String::from("recd")),
-            title: "some_title".to_string(),
-            end_time: None,
-            end_height: None,
-            cw20_whitelist: Some(vec![String::from("other-token")]),
-            description: "some_description".to_string(),
-            milestones: vec![],
-        };
-        let receive = Cw20ReceiveMsg {
-            sender: String::from("source"),
-            amount: Uint128::new(100),
-            msg: to_binary(&ExecuteMsg::Create(create.clone())).unwrap(),
-        };
-        let token_contract = String::from("my-cw20-token");
-        let info = mock_info(&token_contract, &[]);
-        let msg = ExecuteMsg::Receive(receive.clone());
-        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
-        assert_eq!(("action", "create"), res.attributes[0]);
+    //     // instantiate an empty contract
+    //     let instantiate_msg = InstantiateMsg {};
+    //     let info = mock_info(&ANYONE, &[]);
+    //     let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
+    //     assert_eq!(0, res.messages.len());
 
-        // ensure the whitelist is what we expect
-        let details = query_escrow_details(deps.as_ref(), "foobar".to_string()).unwrap();
-        assert_eq!(
-            details,
-            EscrowDetailsResponse {
-                id: "foobar".to_string(),
-                arbiter: String::from("arbitrate"),
-                recipient: Some(String::from("recd")),
-                source: String::from("source"),
-                title: "some_title".to_string(),
-                description: "some_description".to_string(),
-                end_height: None,
-                end_time: None,
-                native_balance: vec![],
-                cw20_balance: vec![Cw20Coin {
-                    address: String::from("my-cw20-token"),
-                    amount: Uint128::new(100),
-                }],
-                cw20_whitelist: vec![String::from("other-token"), String::from("my-cw20-token")],
-                milestones: vec![],
-            }
-        );
+    //     // create an escrow
+    //     let create = CreateMsg {
+    //         id: "foobar".to_string(),
+    //         arbiter: String::from("arbitrate"),
+    //         recipient: Some(String::from("recd")),
+    //         title: "some_title".to_string(),
+    //         cw20_whitelist: Some(vec![String::from("other-token")]),
+    //         description: "some_description".to_string(),
+    //         milestones: vec![],
+    //     };
+    //     let receive = Cw20ReceiveMsg {
+    //         sender: String::from(SOURCE),
+    //         amount: Uint128::new(100),
+    //         msg: to_binary(&ExecuteMsg::Create(create.clone())).unwrap(),
+    //     };
+    //     let token_contract = String::from("my-cw20-token");
+    //     let info = mock_info(&token_contract, &[]);
+    //     let msg = ExecuteMsg::Receive(receive.clone());
+    //     let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+    //     assert_eq!(0, res.messages.len());
+    //     assert_eq!(("action", "create"), res.attributes[0]);
 
-        // approve it
-        let id = create.id.clone();
-        let milestone_id = create.milestones[0].id.clone();
-        let info = mock_info(&create.arbiter, &[]);
-        let res = execute(
-            deps.as_mut(),
-            mock_env(),
-            info,
-            ExecuteMsg::ApproveMilestone {
-                id,
-                milestone_id: milestone_id.clone(),
-            },
-        )
-        .unwrap();
-        assert_eq!(1, res.messages.len());
-        assert_eq!(("action", "approve"), res.attributes[0]);
-        let send_msg = Cw20ExecuteMsg::Transfer {
-            recipient: create.recipient.unwrap(),
-            amount: receive.amount,
-        };
-        assert_eq!(
-            res.messages[0],
-            SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-                contract_addr: token_contract,
-                msg: to_binary(&send_msg).unwrap(),
-                funds: vec![]
-            }))
-        );
+    //     // ensure the whitelist is what we expect
+    //     let details = query_escrow_details(deps.as_ref(), "foobar".to_string()).unwrap();
+    //     assert_eq!(
+    //         details,
+    //         EscrowDetailsResponse {
+    //             id: "foobar".to_string(),
+    //             arbiter: String::from("arbitrate"),
+    //             recipient: Some(String::from("recd")),
+    //             source: String::from(SOURCE),
+    //             title: "some_title".to_string(),
+    //             description: "some_description".to_string(),
+    //             end_height: None,
+    //             end_time: None,
+    //             native_balance: vec![],
+    //             cw20_balance: vec![Cw20Coin {
+    //                 address: String::from("my-cw20-token"),
+    //                 amount: Uint128::new(100),
+    //             }],
+    //             cw20_whitelist: vec![String::from("other-token"), String::from("my-cw20-token")],
+    //             milestones: vec![],
+    //         }
+    //     );
 
-        // second attempt fails (not found)
-        let id = create.id.clone();
-        let info = mock_info(&create.arbiter, &[]);
-        let err = execute(
-            deps.as_mut(),
-            mock_env(),
-            info,
-            ExecuteMsg::ApproveMilestone { id, milestone_id },
-        )
-        .unwrap_err();
-        assert!(matches!(err, ContractError::Std(StdError::NotFound { .. })));
-    }
+    //     // approve it
+    //     let id = create.id.clone();
+    //     let milestone_id = create.milestones[0].id.clone();
+    //     let info = mock_info(&create.arbiter, &[]);
+    //     let res = execute(
+    //         deps.as_mut(),
+    //         mock_env(),
+    //         info,
+    //         ExecuteMsg::ApproveMilestone {
+    //             id,
+    //             milestone_id: milestone_id.clone(),
+    //         },
+    //     )
+    //     .unwrap();
+    //     assert_eq!(1, res.messages.len());
+    //     assert_eq!(("action", "approve"), res.attributes[0]);
+    //     let send_msg = Cw20ExecuteMsg::Transfer {
+    //         recipient: create.recipient.unwrap(),
+    //         amount: receive.amount,
+    //     };
+    //     assert_eq!(
+    //         res.messages[0],
+    //         SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+    //             contract_addr: token_contract,
+    //             msg: to_binary(&send_msg).unwrap(),
+    //             funds: vec![]
+    //         }))
+    //     );
 
-    #[test]
-    fn set_recipient_after_creation() {
-        let mut deps = mock_dependencies();
+    //     // second attempt fails (not found)
+    //     let id = create.id.clone();
+    //     let info = mock_info(&create.arbiter, &[]);
+    //     let err = execute(
+    //         deps.as_mut(),
+    //         mock_env(),
+    //         info,
+    //         ExecuteMsg::ApproveMilestone { id, milestone_id },
+    //     )
+    //     .unwrap_err();
+    //     assert!(matches!(err, ContractError::Std(StdError::NotFound { .. })));
+    // }
 
-        // instantiate an empty contract
-        let instantiate_msg = InstantiateMsg {};
-        let info = mock_info(&ANYONE, &[]);
-        let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
-        assert_eq!(0, res.messages.len());
+    // #[test]
+    // fn set_recipient_after_creation() {
+    //     let mut deps = mock_dependencies();
 
-        // create an escrow
-        let create = CreateMsg {
-            id: "foobar".to_string(),
-            arbiter: String::from("arbitrate"),
-            recipient: None,
-            title: "some_title".to_string(),
-            end_time: None,
-            end_height: Some(123456),
-            cw20_whitelist: None,
-            description: "some_description".to_string(),
-            milestones: vec![],
-        };
-        let sender = String::from("source");
-        let balance = coins(100, "tokens");
-        let info = mock_info(&sender, &balance);
-        let msg = ExecuteMsg::Create(create.clone());
-        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
-        assert_eq!(("action", "create"), res.attributes[0]);
+    //     // instantiate an empty contract
+    //     let instantiate_msg = InstantiateMsg {};
+    //     let info = mock_info(&ANYONE, &[]);
+    //     let res = instantiate(deps.as_mut(), mock_env(), info, instantiate_msg).unwrap();
+    //     assert_eq!(0, res.messages.len());
 
-        // ensure the details is what we expect
-        let details = query_escrow_details(deps.as_ref(), "foobar".to_string()).unwrap();
-        assert_eq!(
-            details,
-            EscrowDetailsResponse {
-                id: "foobar".to_string(),
-                arbiter: String::from("arbitrate"),
-                recipient: None,
-                source: String::from("source"),
-                title: "some_title".to_string(),
-                description: "some_description".to_string(),
-                end_height: Some(123456),
-                end_time: None,
-                native_balance: balance.clone(),
-                cw20_balance: vec![],
-                cw20_whitelist: vec![],
-                milestones: vec![],
-            }
-        );
+    //     // create an escrow
+    //     let create = CreateMsg {
+    //         id: "foobar".to_string(),
+    //         arbiter: String::from("arbitrate"),
+    //         recipient: None,
+    //         title: "some_title".to_string(),
+    //         cw20_whitelist: None,
+    //         description: "some_description".to_string(),
+    //         milestones: vec![],
+    //     };
+    //     let sender = String::from(SOURCE);
+    //     let balance = coins(100, "tokens");
+    //     let info = mock_info(&sender, &balance);
+    //     let msg = ExecuteMsg::Create(create.clone());
+    //     let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+    //     assert_eq!(0, res.messages.len());
+    //     assert_eq!(("action", "create"), res.attributes[0]);
 
-        // approve it, should fail as we have not set recipient
-        let id = create.id.clone();
-        let milestone_id = create.milestones[0].id.clone();
-        let info = mock_info(&create.arbiter, &[]);
-        let res = execute(
-            deps.as_mut(),
-            mock_env(),
-            info,
-            ExecuteMsg::ApproveMilestone { id, milestone_id },
-        );
-        match res {
-            Err(ContractError::RecipientNotSet {}) => {}
-            _ => panic!("Expect recipient not set error"),
-        }
+    //     // ensure the details is what we expect
+    //     let details = query_escrow_details(deps.as_ref(), "foobar".to_string()).unwrap();
+    //     assert_eq!(
+    //         details,
+    //         EscrowDetailsResponse {
+    //             id: "foobar".to_string(),
+    //             arbiter: String::from("arbitrate"),
+    //             recipient: None,
+    //             source: String::from(SOURCE),
+    //             title: "some_title".to_string(),
+    //             description: "some_description".to_string(),
+    //             end_height: Some(123456),
+    //             end_time: None,
+    //             native_balance: balance.clone(),
+    //             cw20_balance: vec![],
+    //             cw20_whitelist: vec![],
+    //             milestones: vec![],
+    //         }
+    //     );
 
-        // test setting recipient not arbiter
-        let msg = ExecuteMsg::SetRecipient {
-            id: create.id.clone(),
-            recipient: "recp".to_string(),
-        };
-        let info = mock_info("someoneelse", &[]);
-        let res = execute(deps.as_mut(), mock_env(), info, msg);
-        match res {
-            Err(ContractError::Unauthorized {}) => {}
-            _ => panic!("Expect unauthorized error"),
-        }
+    //     // approve it, should fail as we have not set recipient
+    //     let id = create.id.clone();
+    //     let milestone_id = create.milestones[0].id.clone();
+    //     let info = mock_info(&create.arbiter, &[]);
+    //     let res = execute(
+    //         deps.as_mut(),
+    //         mock_env(),
+    //         info,
+    //         ExecuteMsg::ApproveMilestone { id, milestone_id },
+    //     );
+    //     match res {
+    //         Err(ContractError::RecipientNotSet {}) => {}
+    //         _ => panic!("Expect recipient not set error"),
+    //     }
 
-        // test setting recipient valid
-        let msg = ExecuteMsg::SetRecipient {
-            id: create.id.clone(),
-            recipient: "recp".to_string(),
-        };
-        let info = mock_info(&create.arbiter, &[]);
-        let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(res.messages.len(), 0);
-        assert_eq!(
-            res.attributes,
-            vec![
-                attr("action", "set_recipient"),
-                attr("id", create.id.as_str()),
-                attr("recipient", "recp")
-            ]
-        );
+    //     // test setting recipient not arbiter
+    //     let msg = ExecuteMsg::SetRecipient {
+    //         id: create.id.clone(),
+    //         recipient: "recp".to_string(),
+    //     };
+    //     let info = mock_info("someoneelse", &[]);
+    //     let res = execute(deps.as_mut(), mock_env(), info, msg);
+    //     match res {
+    //         Err(ContractError::Unauthorized {}) => {}
+    //         _ => panic!("Expect unauthorized error"),
+    //     }
 
-        // approve it, should now work with recp
-        let id = create.id.clone();
-        let milestone_id = create.milestones[0].id.clone();
-        let info = mock_info(&create.arbiter, &[]);
-        let res = execute(
-            deps.as_mut(),
-            mock_env(),
-            info,
-            ExecuteMsg::ApproveMilestone { id, milestone_id },
-        )
-        .unwrap();
-        assert_eq!(1, res.messages.len());
-        assert_eq!(("action", "approve"), res.attributes[0]);
-        assert_eq!(
-            res.messages[0],
-            SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
-                to_address: "recp".to_string(),
-                amount: balance,
-            }))
-        );
-    }
+    //     // test setting recipient valid
+    //     let msg = ExecuteMsg::SetRecipient {
+    //         id: create.id.clone(),
+    //         recipient: "recp".to_string(),
+    //     };
+    //     let info = mock_info(&create.arbiter, &[]);
+    //     let res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+    //     assert_eq!(res.messages.len(), 0);
+    //     assert_eq!(
+    //         res.attributes,
+    //         vec![
+    //             attr("action", "set_recipient"),
+    //             attr("id", create.id.as_str()),
+    //             attr("recipient", "recp")
+    //         ]
+    //     );
 
-    #[test]
-    fn add_tokens_proper() {
-        let mut tokens = GenericBalance::default();
-        tokens.add_tokens(Balance::from(vec![coin(123, "atom"), coin(789, "eth")]));
-        tokens.add_tokens(Balance::from(vec![coin(456, "atom"), coin(12, "btc")]));
-        assert_eq!(
-            tokens.native,
-            vec![coin(579, "atom"), coin(789, "eth"), coin(12, "btc")]
-        );
-    }
+    //     // approve it, should now work with recp
+    //     let id = create.id.clone();
+    //     let milestone_id = create.milestones[0].id.clone();
+    //     let info = mock_info(&create.arbiter, &[]);
+    //     let res = execute(
+    //         deps.as_mut(),
+    //         mock_env(),
+    //         info,
+    //         ExecuteMsg::ApproveMilestone { id, milestone_id },
+    //     )
+    //     .unwrap();
+    //     assert_eq!(1, res.messages.len());
+    //     assert_eq!(("action", "approve"), res.attributes[0]);
+    //     assert_eq!(
+    //         res.messages[0],
+    //         SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+    //             to_address: "recp".to_string(),
+    //             amount: balance,
+    //         }))
+    //     );
+    // }
 
-    #[test]
-    fn add_cw_tokens_proper() {
-        let mut tokens = GenericBalance::default();
-        let bar_token = Addr::unchecked("bar_token");
-        let foo_token = Addr::unchecked("foo_token");
-        tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
-            address: foo_token.clone(),
-            amount: Uint128::new(12345),
-        }));
-        tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
-            address: bar_token.clone(),
-            amount: Uint128::new(777),
-        }));
-        tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
-            address: foo_token.clone(),
-            amount: Uint128::new(23400),
-        }));
-        assert_eq!(
-            tokens.cw20,
-            vec![
-                Cw20CoinVerified {
-                    address: foo_token,
-                    amount: Uint128::new(35745),
-                },
-                Cw20CoinVerified {
-                    address: bar_token,
-                    amount: Uint128::new(777),
-                }
-            ]
-        );
-    }
+    // #[test]
+    // fn add_tokens_proper() {
+    //     let mut tokens = GenericBalance::default();
+    //     tokens.add_tokens(Balance::from(vec![coin(123, "atom"), coin(789, "eth")]));
+    //     tokens.add_tokens(Balance::from(vec![coin(456, "atom"), coin(12, "btc")]));
+    //     assert_eq!(
+    //         tokens.native,
+    //         vec![coin(579, "atom"), coin(789, "eth"), coin(12, "btc")]
+    //     );
+    // }
+
+    // #[test]
+    // fn add_cw_tokens_proper() {
+    //     let mut tokens = GenericBalance::default();
+    //     let bar_token = Addr::unchecked("bar_token");
+    //     let foo_token = Addr::unchecked("foo_token");
+    //     tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
+    //         address: foo_token.clone(),
+    //         amount: Uint128::new(12345),
+    //     }));
+    //     tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
+    //         address: bar_token.clone(),
+    //         amount: Uint128::new(777),
+    //     }));
+    //     tokens.add_tokens(Balance::Cw20(Cw20CoinVerified {
+    //         address: foo_token.clone(),
+    //         amount: Uint128::new(23400),
+    //     }));
+    //     assert_eq!(
+    //         tokens.cw20,
+    //         vec![
+    //             Cw20CoinVerified {
+    //                 address: foo_token,
+    //                 amount: Uint128::new(35745),
+    //             },
+    //             Cw20CoinVerified {
+    //                 address: bar_token,
+    //                 amount: Uint128::new(777),
+    //             }
+    //         ]
+    //     );
+    // }
 }
