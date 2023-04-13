@@ -2,8 +2,9 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Coin, Deps, Env, Order, StdResult, Storage, Timestamp};
 use cw20::{Balance, Cw20CoinVerified};
 use cw_storage_plus::Map;
+use cw_utils::NativeBalance;
 
-use crate::ContractError;
+use crate::{msg::CreateMilestoneMsg, ContractError};
 
 pub const ESCROWS: Map<&str, Escrow> = Map::new("escrow");
 
@@ -30,6 +31,21 @@ pub struct Milestone {
     pub end_height: Option<u64>,
     pub end_time: Option<u64>,
     pub is_completed: bool,
+}
+
+impl HasAmount for Milestone {
+    fn get_amount(&self) -> GenericBalance {
+        self.amount.clone()
+    }
+}
+
+impl HasEnd for Milestone {
+    fn get_end_time(&self) -> Option<u64> {
+        self.end_time
+    }
+    fn get_end_height(&self) -> Option<u64> {
+        self.end_height
+    }
 }
 
 impl Milestone {
@@ -152,23 +168,16 @@ impl Escrow {
             .collect()
     }
 
-    pub fn create_milestone(
-        &mut self,
-        id: String,
-        title: String,
-        description: String,
-        amount: GenericBalance,
-        end_height: Option<u64>,
-        end_time: Option<u64>,
-    ) {
+    pub fn create_milestone(&mut self, milestone: CreateMilestoneMsg) {
+        let id = (self.milestones.len() + 1).to_string();
         self.milestones.push(Milestone {
             id,
-            title,
-            description,
-            amount,
+            title: milestone.title,
+            description: milestone.description,
+            amount: milestone.amount,
             is_completed: false,
-            end_height,
-            end_time,
+            end_height: milestone.end_height,
+            end_time: milestone.end_time,
         });
     }
 
@@ -180,51 +189,49 @@ impl Escrow {
         get_total_balance_from(self.clone().milestones).unwrap()
     }
 
-    pub fn get_total_end_height(&self) -> Option<u64> {
-        get_total_end_height(self.clone().milestones)
+    pub fn get_end_height(&self) -> Option<u64> {
+        get_end_height(self.clone().milestones)
     }
 
-    pub fn get_total_end_time(&self) -> Option<u64> {
-        get_total_end_time(self.clone().milestones)
+    pub fn get_end_time(&self) -> Option<u64> {
+        get_end_time(self.clone().milestones)
     }
 
     pub fn update_calculated_properties(&mut self) {
         self.balance = self.get_total_balance();
-        self.end_height = self.get_total_end_height();
-        self.end_time = self.get_total_end_time();
+        self.end_height = self.get_end_height();
+        self.end_time = self.get_end_time();
     }
 }
 
+pub trait HasAmount {
+    fn get_amount(&self) -> GenericBalance;
+}
+
+pub trait HasEnd {
+    fn get_end_height(&self) -> Option<u64>;
+    fn get_end_time(&self) -> Option<u64>;
+}
+
 // Helper functions
-pub fn get_total_balance_from(milestones: Vec<Milestone>) -> StdResult<GenericBalance> {
+pub fn get_total_balance_from<T: HasAmount>(milestones: Vec<T>) -> StdResult<GenericBalance> {
     let mut total_balance = GenericBalance::default();
     for milestone in milestones.iter() {
-        match &milestone.amount {
-            native => total_balance.add_tokens(Balance::from(milestone.amount.native.clone())),
-            cw20 => {
-                for token in milestone.amount.cw20.clone() {
-                    total_balance.add_tokens(Balance::from(token));
-                }
-            }
+        let amount = milestone.get_amount();
+        total_balance.add_tokens(Balance::Native(NativeBalance(amount.native)));
+        for token in &amount.cw20 {
+            total_balance.add_tokens(Balance::Cw20(token.clone()));
         }
     }
     Ok(total_balance)
 }
 
-pub fn get_total_end_height(milestones: Vec<Milestone>) -> Option<u64> {
-    milestones
-        .iter()
-        .filter(|m| m.end_height.is_some())
-        .map(|m| m.end_height.unwrap())
-        .max()
+pub fn get_end_height<T: HasEnd>(milestones: Vec<T>) -> Option<u64> {
+    milestones.iter().filter_map(|m| m.get_end_height()).max()
 }
 
-pub fn get_total_end_time(milestones: Vec<Milestone>) -> Option<u64> {
-    milestones
-        .iter()
-        .filter(|m| m.end_time.is_some())
-        .map(|m| m.end_time.unwrap())
-        .max()
+pub fn get_end_time<T: HasEnd>(milestones: Vec<T>) -> Option<u64> {
+    milestones.iter().filter_map(|m| m.get_end_time()).max()
 }
 
 pub fn get_escrow_by_id(deps: &Deps, id: &String) -> Result<Escrow, ContractError> {
@@ -253,7 +260,7 @@ mod tests {
     use cosmwasm_std::testing::MockStorage;
 
     #[test]
-    fn no_escrow_ids() {
+    fn test_no_escrow_ids() {
         let storage = MockStorage::new();
         let ids = all_escrow_ids(&storage).unwrap();
         assert_eq!(0, ids.len());
@@ -275,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn all_escrow_ids_in_order() {
+    fn test_all_escrow_ids_in_order() {
         let mut storage = MockStorage::new();
         ESCROWS.save(&mut storage, "lazy", &dummy_escrow()).unwrap();
         ESCROWS
