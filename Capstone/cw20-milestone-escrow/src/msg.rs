@@ -5,7 +5,8 @@ use cosmwasm_std::{Addr, Api, Coin, StdResult};
 use cw20::{Balance, Cw20Coin, Cw20ReceiveMsg};
 
 use crate::state::{
-    get_total_balance_from, get_total_end_height, get_total_end_time, GenericBalance, Milestone,
+    get_end_height, get_end_time, get_total_balance_from, GenericBalance, HasAmount, HasEnd,
+    Milestone,
 };
 
 #[cw_serde]
@@ -75,7 +76,7 @@ pub struct CreateMsg {
     pub cw20_whitelist: Option<Vec<String>>,
     /// List of milestones
     /// Each milestone has a title, description, amount, and whether it has been completed or not
-    pub milestones: Vec<Milestone>,
+    pub milestones: Vec<CreateMilestoneMsg>,
 }
 
 impl CreateMsg {
@@ -112,12 +113,12 @@ impl CreateMsg {
         }
     }
 
-    pub fn get_total_end_time(&self) -> Option<u64> {
-        get_total_end_time(self.clone().milestones)
+    pub fn get_end_time(&self) -> Option<u64> {
+        get_end_time(self.clone().milestones)
     }
 
-    pub fn get_total_end_height(&self) -> Option<u64> {
-        get_total_end_height(self.clone().milestones)
+    pub fn get_end_height(&self) -> Option<u64> {
+        get_end_height(self.clone().milestones)
     }
 }
 
@@ -131,13 +132,26 @@ pub struct CreateMilestoneMsg {
     pub description: String,
     /// Amount of tokens to be released when the milestone is completed
     pub amount: GenericBalance,
-    /// Whether the milestone has been completed or not
-    pub is_completed: bool,
     /// When end height set and block height exceeds this value, the escrow is expired.
     pub end_height: Option<u64>,
     /// When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and
     /// block time exceeds this value, the escrow is expired.
     pub end_time: Option<u64>,
+}
+
+impl HasAmount for CreateMilestoneMsg {
+    fn get_amount(&self) -> GenericBalance {
+        self.amount.clone()
+    }
+}
+
+impl HasEnd for CreateMilestoneMsg {
+    fn get_end_time(&self) -> Option<u64> {
+        self.end_time
+    }
+    fn get_end_height(&self) -> Option<u64> {
+        self.end_height
+    }
 }
 
 pub fn is_valid_name(name: &str) -> bool {
