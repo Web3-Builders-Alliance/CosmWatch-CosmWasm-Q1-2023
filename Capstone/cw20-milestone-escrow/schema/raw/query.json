@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryMsg",
+  "oneOf": [
+    {
+      "description": "Show all open escrows. Return type is ListResponse.",
+      "type": "object",
+      "required": [
+        "list"
+      ],
+      "properties": {
+        "list": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns the details of the named escrow, error if not created Return type: DetailsResponse.",
+      "type": "object",
+      "required": [
+        "escrow_details"
+      ],
+      "properties": {
+        "escrow_details": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "milestone_details"
+      ],
+      "properties": {
+        "milestone_details": {
+          "type": "object",
+          "required": [
+            "id",
+            "milestone_id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "milestone_id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "description": "Returns the details of all milestones for a given escrow",
+      "type": "object",
+      "required": [
+        "list_milestones"
+      ],
+      "properties": {
+        "list_milestones": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

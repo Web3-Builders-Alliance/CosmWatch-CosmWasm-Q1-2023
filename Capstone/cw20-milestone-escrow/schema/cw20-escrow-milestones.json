@@ -1,0 +1,819 @@
+{
+  "contract_name": "cw20-escrow-milestones",
+  "contract_version": "0.14.2",
+  "idl_version": "1.0.0",
+  "instantiate": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "InstantiateMsg",
+    "type": "object",
+    "additionalProperties": false
+  },
+  "execute": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "ExecuteMsg",
+    "oneOf": [
+      {
+        "description": "Creates a new escrow with the given details",
+        "type": "object",
+        "required": [
+          "create"
+        ],
+        "properties": {
+          "create": {
+            "$ref": "#/definitions/CreateMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Creates a new milestone for a given escrow",
+        "type": "object",
+        "required": [
+          "create_milestone"
+        ],
+        "properties": {
+          "create_milestone": {
+            "$ref": "#/definitions/CreateMilestoneMsg"
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Set the recipient of the given escrow",
+        "type": "object",
+        "required": [
+          "set_recipient"
+        ],
+        "properties": {
+          "set_recipient": {
+            "type": "object",
+            "required": [
+              "id",
+              "recipient"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "recipient": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Approve sends all tokens to the recipient for a given milestone. Only the arbiter can do this",
+        "type": "object",
+        "required": [
+          "approve_milestone"
+        ],
+        "properties": {
+          "approve_milestone": {
+            "type": "object",
+            "required": [
+              "id",
+              "milestone_id"
+            ],
+            "properties": {
+              "id": {
+                "description": "id is a human-readable name for the escrow from create",
+                "type": "string"
+              },
+              "milestone_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "extend_milestone"
+        ],
+        "properties": {
+          "extend_milestone": {
+            "type": "object",
+            "required": [
+              "id",
+              "milestone_id"
+            ],
+            "properties": {
+              "end_height": {
+                "description": "When end height set and block height exceeds this value, the escrow is expired. Once an escrow is expired, it can be returned to the original funder (via \"refund\").",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+              },
+              "end_time": {
+                "description": "When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and block time exceeds this value, the escrow is expired. Once an escrow is expired, it can be returned to the original funder (via \"refund\").",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint64",
+                "minimum": 0.0
+             },
+              "id": {
+                "description": "id is a human-readable name for the escrow from create",
+                "type": "string"
+              },
+              "milestone_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Refund returns all remaining tokens to the original sender, The arbiter can do this any time, or anyone can do this after a timeout",
+        "type": "object",
+        "required": [
+          "refund"
+        ],
+        "properties": {
+          "refund": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "description": "id is a human-readable name for the escrow from create",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "This accepts a properly-encoded ReceiveMsg from a cw20 contract",
+        "type": "object",
+        "required": [
+          "receive"
+        ],
+        "properties": {
+          "receive": {
+            "$ref": "#/definitions/Cw20ReceiveMsg"
+          }
+        },
+        "additionalProperties": false
+      }
+    ],
+    "definitions": {
+      "Addr": {
+        "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+        "type": "string"
+      },
+      "Binary": {
+        "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>. See also <https://github.com/CosmWasm/cosmwasm/blob/main/docs/MESSAGE_TYPES.md>.",
+        "type": "string"
+      },
+      "Coin": {
+        "type": "object",
+        "required": [
+          "amount",
+          "denom"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "denom": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateMilestoneMsg": {
+        "type": "object",
+        "required": [
+          "amount",
+          "description",
+          "escrow_id",
+          "title"
+        ],
+        "properties": {
+          "amount": {
+            "description": "Amount of tokens to be released when the milestone is completed",
+            "allOf": [
+              {
+                "$ref": "#/definitions/GenericBalance"
+              }
+            ]
+          },
+          "description": {
+            "description": "Longer description of the milestone, e.g. what conditions should be met",
+            "type": "string"
+          },
+          "end_height": {
+            "description": "When end height set and block height exceeds this value, the escrow is expired.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "end_time": {
+            "description": "When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and block time exceeds this value, the escrow is expired.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 0.0
+          },
+          "escrow_id": {
+            "description": "id is a human-readable name for the escrow to use later",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title of the milestone",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateMsg": {
+        "type": "object",
+        "required": [
+          "arbiter",
+          "description",
+          "id",
+          "milestones",
+          "title"
+        ],
+        "properties": {
+          "arbiter": {
+            "type": "string"
+          },
+          "cw20_whitelist": {
+            "description": "When end height set and block height exceeds this value, the escrow is expired. Once an escrow is expired, it can be returned to the original funder (via \"refund\").",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "description": "Longer description of the escrow, e.g. what conditions should be met",
+            "type": "string"
+          },
+          "id": {
+            "description": "id is a human-readable name for the escrow to use later 3-20 bytes of utf-8 text",
+            "type": "string"
+          },
+          "milestones": {
+            "description": "List of milestones Each milestone has a title, description, amount, and whether it has been completed or not",
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/CreateMilestoneMsg"
+            }
+          },
+          "recipient": {
+            "description": "if approved, funds go to the recipient",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "description": "Title of the escrow",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Cw20CoinVerified": {
+        "type": "object",
+        "required": [
+          "address",
+          "amount"
+        ],
+        "properties": {
+          "address": {
+            "$ref": "#/definitions/Addr"
+          },
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Cw20ReceiveMsg": {
+        "description": "Cw20ReceiveMsg should be de/serialized under `Receive()` variant in a ExecuteMsg",
+        "type": "object",
+        "required": [
+          "amount",
+          "msg",
+          "sender"
+        ],
+        "properties": {
+          "amount": {
+            "$ref": "#/definitions/Uint128"
+          },
+          "msg": {
+            "$ref": "#/definitions/Binary"
+          },
+          "sender": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GenericBalance": {
+        "type": "object",
+        "required": [
+          "cw20",
+          "native"
+        ],
+        "properties": {
+          "cw20": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Cw20CoinVerified"
+            }
+          },
+          "native": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Coin"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Uint128": {
+        "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+        "type": "string"
+      }
+    }
+  },
+  "query": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "QueryMsg",
+    "oneOf": [
+      {
+        "description": "Show all open escrows. Return type is ListResponse.",
+        "type": "object",
+        "required": [
+          "list"
+        ],
+        "properties": {
+          "list": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns the details of the named escrow, error if not created Return type: DetailsResponse.",
+        "type": "object",
+        "required": [
+          "escrow_details"
+        ],
+        "properties": {
+          "escrow_details": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": [
+          "milestone_details"
+        ],
+        "properties": {
+          "milestone_details": {
+            "type": "object",
+            "required": [
+              "id",
+              "milestone_id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "milestone_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "description": "Returns the details of all milestones for a given escrow",
+        "type": "object",
+        "required": [
+          "list_milestones"
+        ],
+        "properties": {
+          "list_milestones": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "migrate": null,
+  "sudo": null,
+  "responses": {
+    "escrow_details": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "EscrowDetailsResponse",
+      "type": "object",
+      "required": [
+        "arbiter",
+        "cw20_balance",
+        "cw20_whitelist",
+        "description",
+        "id",
+        "milestones",
+        "native_balance",
+        "source",
+        "title"
+      ],
+      "properties": {
+        "arbiter": {
+          "description": "arbiter can decide to approve or refund the escrow",
+          "type": "string"
+        },
+        "cw20_balance": {
+          "description": "Balance in cw20 tokens",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Cw20Coin"
+          }
+        },
+        "cw20_whitelist": {
+          "description": "Whitelisted cw20 tokens",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "description": "Longer description of the escrow, e.g. what conditions should be met",
+          "type": "string"
+        },
+        "end_height": {
+          "description": "When end height set and block height exceeds this value, the escrow is expired. Once an escrow is expired, it can be returned to the original funder (via \"refund\").",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "end_time": {
+          "description": "When end time (in seconds since epoch 00:00:00 UTC on 1 January 1970) is set and block time exceeds this value, the escrow is expired. Once an escrow is expired, it can be returned to the original funder (via \"refund\").",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "id": {
+          "description": "id of this escrow",
+          "type": "string"
+        },
+        "milestones": {
+          "description": "List of milestones",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Milestone"
+          }
+        },
+        "native_balance": {
+          "description": "Balance in native tokens",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Coin"
+          }
+        },
+        "recipient": {
+          "description": "if approved, funds go to the recipient",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "if refunded, funds go to the source",
+          "type": "string"
+        },
+        "title": {
+          "description": "Title of the escrow",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "Coin": {
+          "type": "object",
+          "required": [
+            "amount",
+            "denom"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "denom": {
+              "type": "string"
+            }
+          }
+        },
+        "Cw20Coin": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount"
+          ],
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Cw20CoinVerified": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/Addr"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        },
+        "GenericBalance": {
+          "type": "object",
+          "required": [
+            "cw20",
+            "native"
+          ],
+          "properties": {
+            "cw20": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Cw20CoinVerified"
+              }
+            },
+            "native": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Coin"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "Milestone": {
+          "type": "object",
+          "required": [
+            "amount",
+            "description",
+            "id",
+            "is_completed",
+            "title"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/GenericBalance"
+            },
+            "description": {
+              "type": "string"
+            },
+            "end_height": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "end_time": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_completed": {
+              "type": "boolean"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    },
+    "list": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ListEscrowsResponse",
+      "type": "object",
+      "required": [
+        "escrows"
+      ],
+      "properties": {
+        "escrows": {
+          "description": "list all registered ids",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "list_milestones": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ListMilestonesResponse",
+      "type": "object",
+      "required": [
+        "milestones"
+      ],
+      "properties": {
+        "milestones": {
+          "description": "list all registered milestone ids",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "milestone_details": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Milestone",
+      "type": "object",
+      "required": [
+        "amount",
+        "description",
+        "id",
+        "is_completed",
+        "title"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/GenericBalance"
+        },
+        "description": {
+          "type": "string"
+        },
+        "end_height": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "end_time": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "id": {
+          "type": "string"
+        },
+        "is_completed": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "definitions": {
+        "Addr": {
+          "description": "A human readable address.\n\nIn Cosmos, this is typically bech32 encoded. But for multi-chain smart contracts no assumptions should be made other than being UTF-8 encoded and of reasonable length.\n\nThis type represents a validated address. It can be created in the following ways 1. Use `Addr::unchecked(input)` 2. Use `let checked: Addr = deps.api.addr_validate(input)?` 3. Use `let checked: Addr = deps.api.addr_humanize(canonical_addr)?` 4. Deserialize from JSON. This must only be done from JSON that was validated before such as a contract's state. `Addr` must not be used in messages sent by the user because this would result in unvalidated instances.\n\nThis type is immutable. If you really need to mutate it (Really? Are you sure?), create a mutable copy using `let mut mutable = Addr::to_string()` and operate on that `String` instance.",
+          "type": "string"
+        },
+        "Coin": {
+          "type": "object",
+          "required": [
+            "amount",
+            "denom"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "denom": {
+              "type": "string"
+            }
+          }
+        },
+        "Cw20CoinVerified": {
+          "type": "object",
+          "required": [
+            "address",
+            "amount"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/Addr"
+            },
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          },
+          "additionalProperties": false
+        },
+        "GenericBalance": {
+          "type": "object",
+          "required": [
+            "cw20",
+            "native"
+          ],
+          "properties": {
+            "cw20": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Cw20CoinVerified"
+              }
+            },
+            "native": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Coin"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "Uint128": {
+          "description": "A thin wrapper around u128 that is using strings for JSON encoding/decoding, such that the full u128 range can be used for clients that convert JSON numbers to floats, like JavaScript and jq.\n\n# Examples\n\nUse `from` to create instances of this and `u128` to get the value out:\n\n``` # use cosmwasm_std::Uint128; let a = Uint128::from(123u128); assert_eq!(a.u128(), 123);\n\nlet b = Uint128::from(42u64); assert_eq!(b.u128(), 42);\n\nlet c = Uint128::from(70u32); assert_eq!(c.u128(), 70); ```",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
