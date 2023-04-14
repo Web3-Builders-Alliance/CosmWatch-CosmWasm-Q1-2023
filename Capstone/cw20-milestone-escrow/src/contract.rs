@@ -98,7 +98,7 @@ pub fn execute_create(
 
     // check to make sure the total balance of all milestones is equal to the funds sent
     // only checks the first token for each type
-    if !msg.is_deposit_equal_to_milestones_balance(balance) {
+    if !msg.is_deposit_equal_to_milestones_balance(balance.clone()) {
         return Err(ContractError::FundsMismatch {});
     }
 
@@ -108,10 +108,25 @@ pub fn execute_create(
         .clone()
         .recipient
         .and_then(|addr| deps.api.addr_validate(&addr).ok());
-    let balance = msg.total_balance_from_milestones();
+    let mut cw20_whitelist = msg.addr_whitelist(deps.api)?;
+    let balance = match balance {
+        Balance::Native(balance) => GenericBalance {
+            native: balance.0,
+            cw20: vec![],
+        },
+        Balance::Cw20(token) => {
+            // make sure the token sent is on the whitelist by default
+            if !cw20_whitelist.iter().any(|t| t == &token.address) {
+                cw20_whitelist.push(token.address.clone())
+            }
+            GenericBalance {
+                native: vec![],
+                cw20: vec![token],
+            }
+        }
+    };
     let end_time = msg.get_end_time();
     let end_height = msg.get_end_height();
-    let cw20_whitelist = msg.addr_whitelist(deps.api)?;
 
     // create the escrow
     let mut escrow = Escrow {
@@ -266,17 +281,27 @@ pub fn execute_approve_milestone(
     // if last milestone, send escrow balance to recipient and delete escrow using the approve function
     // otherwise, just save the escrow
     if escrow.is_complete() {
-        Ok(execute_approve(deps, env, info, id.clone())?)
+        let approve_messages = execute_approve(deps, env, info, id.clone())?;
+
+        println!("\n approve_res: {:?}\n", approve_messages);
+
+        Ok(Response::new()
+            .add_attribute("action", "approve_milestone")
+            .add_attribute("id", id.as_str())
+            .add_attribute("is_escrow_complete", "true")
+            .add_submessages(approve_messages))
     } else {
+        escrow.update_calculated_properties();
+
         ESCROWS.save(deps.storage, &id, &escrow)?;
 
         Ok(Response::new()
-            .add_submessages(messages)
             .add_attributes(vec![
                 ("action", "approve_milestone"),
                 ("id", id.as_str()),
                 ("milestone_id", milestone_id.as_str()),
-            ]))
+            ])
+            .add_submessages(messages))
     }
 }
 
@@ -294,10 +319,6 @@ pub fn execute_extend_milestone(
 
     if info.sender != escrow.arbiter {
         return Err(ContractError::Unauthorized {});
-    }
-
-    if escrow.is_expired(&env) {
-        return Err(ContractError::Expired {});
     }
 
     let milestone = escrow
@@ -361,7 +382,7 @@ fn execute_approve(
     env: Env,
     info: MessageInfo,
     id: String,
-) -> Result<Response, ContractError> {
+) -> Result<Vec<SubMsg>, ContractError> {
     // fails if escrow doesn't exist
     let escrow = get_escrow_by_id(&deps.as_ref(), &id)?;
 
@@ -380,11 +401,7 @@ fn execute_approve(
     // send all tokens out
     let messages: Vec<SubMsg> = send_tokens(&recipient, &escrow.balance)?;
 
-    Ok(Response::new()
-        .add_attribute("action", "approve")
-        .add_attribute("id", id)
-        .add_attribute("to", recipient)
-        .add_submessages(messages))
+    Ok(messages)
 }
 
 fn send_tokens(to: &Addr, balance: &GenericBalance) -> StdResult<Vec<SubMsg>> {
