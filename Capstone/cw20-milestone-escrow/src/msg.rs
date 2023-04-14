@@ -54,7 +54,6 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub enum ReceiveMsg {
     Create(CreateMsg),
-    /// Adds all sent native tokens to the contract
     CreateMilestone(CreateMilestoneMsg),
 }
 
