@@ -122,7 +122,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(1, res.messages.len());
-        assert_eq!(("action", "approve"), res.attributes[0]);
+        assert_eq!(("action", "approve_milestone"), res.attributes[0]);
         assert_eq!(
             res.messages[0],
             SubMsg::new(CosmosMsg::Bank(BankMsg::Send {

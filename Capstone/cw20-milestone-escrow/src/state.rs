@@ -189,6 +189,10 @@ impl Escrow {
         get_total_balance_from(self.clone().milestones).unwrap()
     }
 
+    pub fn get_remaining_balance(&self) -> GenericBalance {
+        get_remaining_balance(self.clone().milestones).unwrap()
+    }
+
     pub fn get_end_height(&self) -> Option<u64> {
         get_end_height(self.clone().milestones)
     }
@@ -224,6 +228,20 @@ pub fn get_total_balance_from<T: HasAmount>(milestones: Vec<T>) -> StdResult<Gen
         }
     }
     Ok(total_balance)
+}
+
+pub fn get_remaining_balance(milestones: Vec<Milestone>) -> StdResult<GenericBalance> {
+    let mut remaining_balance = GenericBalance::default();
+    for milestone in milestones.iter() {
+        if !milestone.is_completed {
+            let amount = milestone.get_amount();
+            remaining_balance.add_tokens(Balance::Native(NativeBalance(amount.native)));
+            for token in &amount.cw20 {
+                remaining_balance.add_tokens(Balance::Cw20(token.clone()));
+            }
+        }
+    }
+    Ok(remaining_balance)
 }
 
 pub fn get_end_height<T: HasEnd>(milestones: Vec<T>) -> Option<u64> {

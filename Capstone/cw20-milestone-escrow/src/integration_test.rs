@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use cosmwasm_std::{coins, from_binary, to_binary, Addr, Coin, Empty, Uint128};
-use cw20::{Cw20Coin, Cw20CoinVerified, Cw20Contract, Cw20ExecuteMsg, Cw20ReceiveMsg};
+use cosmwasm_std::{coins, to_binary, Addr, Coin, Empty, Uint128};
+use cw20::{Cw20Coin, Cw20CoinVerified, Cw20Contract, Cw20ExecuteMsg};
 use cw_multi_test::{App, Contract, ContractWrapper, Executor};
 
 use crate::{
@@ -30,210 +30,9 @@ pub fn contract_cw20() -> Box<dyn Contract<Empty>> {
     Box::new(contract)
 }
 
-fn create_cw20_contract(
-    router: &mut App,
-    owner: &Addr,
-    name: String,
-    symbol: String,
-    balance: Uint128,
-) -> Cw20Contract {
-    // set up cw20 contract with some tokens
-    let cw20_id = router.store_code(contract_cw20());
-    let msg = cw20_base::msg::InstantiateMsg {
-        name,
-        symbol,
-        decimals: 6,
-        initial_balances: vec![Cw20Coin {
-            address: owner.to_string(),
-            amount: balance,
-        }],
-        mint: None,
-        marketing: None,
-    };
-    let addr = router
-        .instantiate_contract(cw20_id, owner.clone(), &msg, &[], "CASH", None)
-        .unwrap();
-    Cw20Contract(addr)
-}
-
-fn create_escrow_contract(
-    router: &mut App,
-    owner: &Addr,
-    label: &str,
-    admin: Option<String>,
-) -> Addr {
-    let escrow_id = router.store_code(contract_escrow_milestones());
-    let escrow_contract_addr = router
-        .instantiate_contract(
-            escrow_id,
-            owner.clone(),
-            &InstantiateMsg {},
-            &[],
-            label,
-            admin,
-        )
-        .unwrap();
-    escrow_contract_addr
-}
-
-// fn get_escrow_native_balance(
-//     router: &App,
-//     escrow_contract_addr: Addr,
-//     escrow_id: &str,
-// ) -> Vec<Coin> {
-//     let escrow_details = router
-//         .wrap()
-//         .query_wasm_smart(
-//             escrow_contract_addr.clone(),
-//             &QueryMsg::EscrowDetails {
-//                 id: escrow_id.to_string(),
-//             },
-//         )
-//         .unwrap();
-//     let escrow: EscrowDetailsResponse = from_binary(&escrow_details).unwrap();
-//     escrow.native_balance
-// }
-
-fn get_escrow_cw20_balance(
-    router: &App,
-    escrow_contract_addr: Addr,
-    escrow_id: &str,
-) -> Vec<Cw20Coin> {
-    let escrow_details = router
-        .wrap()
-        .query_wasm_smart(
-            escrow_contract_addr.clone(),
-            &QueryMsg::EscrowDetails {
-                id: escrow_id.to_string(),
-            },
-        )
-        .unwrap();
-    let escrow: EscrowDetailsResponse = from_binary(&escrow_details).unwrap();
-    escrow.cw20_balance
-}
-
-#[test]
-fn test_instantiate_and_deposit_cw20() {
-    const NATIVE_TOKEN_DENOM: &str = "juno";
-    const ARBITER: &str = "arbiter";
-    const RECIPIENT: &str = "recipient";
-    let owner = Addr::unchecked("owner");
-
-    // Declare app and owner native balance
-    let mut router = App::new(|router, _, storage| {
-        router
-            .bank
-            .init_balance(storage, &owner, coins(5000, NATIVE_TOKEN_DENOM))
-            .unwrap();
-    });
-
-    // Instantiate cw20 token and escrow milestone contracts
-    let cw20 = create_cw20_contract(
-        &mut router,
-        &owner,
-        "CW Token".to_string(),
-        "CWTOKEN".to_string(),
-        Uint128::new(5000),
-    );
-    let escrow_contract_addr =
-        create_escrow_contract(&mut router, &owner, "Escrow Milestones Contract", None);
-    assert_ne!(cw20.addr(), escrow_contract_addr.clone());
-
-    // Check owner balance
-    let owner_balance = cw20.balance::<_, _, Empty>(&router, owner.clone()).unwrap();
-    assert_eq!(owner_balance, Uint128::new(5000));
-
-    // Create new escrow
-    let amount = GenericBalance {
-        native: vec![],
-        cw20: vec![Cw20CoinVerified {
-            address: cw20.addr(),
-            amount: Uint128::new(5000),
-        }],
-    };
-    let milestone = CreateMilestoneMsg {
-        escrow_id: "escrow_1".to_string(),
-        title: "milestone_1".to_string(),
-        description: "This is the first milestone".to_string(),
-        amount,
-        end_height: None,
-        end_time: None,
-    };
-    let escrow = CreateMsg {
-        id: "escrow_1".to_string(),
-        arbiter: ARBITER.to_string(),
-        recipient: Some(RECIPIENT.to_string()),
-        title: "escrow_1".to_string(),
-        description: "This is the first escrow".to_string(),
-        cw20_whitelist: Some(vec![cw20.addr().to_string()]),
-        milestones: vec![milestone],
-    };
-
-    let msg = ExecuteMsg::Receive(Cw20ReceiveMsg {
-        sender: escrow_contract_addr.clone().to_string(),
-        amount: Uint128::new(5000),
-        msg: to_binary(&ReceiveMsg::Create(escrow)).unwrap(),
-    });
-
-    let res = router.execute_contract(
-        Addr::unchecked("owner"),
-        escrow_contract_addr.clone(),
-        &msg,
-        &coins(5000, NATIVE_TOKEN_DENOM),
-    );
-    // println!("{:?}", res.as_ref().unwrap());
-
-    assert!(res.is_ok());
-
-    // Check escrow balance
-    let escrow_balance = get_escrow_cw20_balance(&router, escrow_contract_addr.clone(), "escrow_1");
-
-    assert_eq!(escrow_balance[0].amount, Uint128::zero());
-
-    let owner_balance = cw20
-        .balance::<_, _, Empty>(&router, escrow_contract_addr.clone())
-        .unwrap();
-    assert_eq!(owner_balance, Uint128::zero());
-
-    let escrow_balance = cw20
-        .balance::<_, _, Empty>(&router, escrow_contract_addr.clone())
-        .unwrap();
-    assert_eq!(escrow_balance, Uint128::new(5000));
-}
-
-#[test]
-fn test_insufficient_sender_balance() {}
-
-#[test]
-fn test_invalid_recipient_address() {}
-
-#[test]
-fn test_create_escrow_native() {}
-
-#[test]
-fn test_create_escrow_cw20() {}
-
-#[test]
-fn test_create_escrow_cw20_invalid() {}
-
-#[test]
-fn test_create_escrow_native_invalid() {}
-
-#[test]
-fn test_refund() {}
-
-#[test]
-fn test_release_on_complete() {}
-
-#[test]
-fn test_release_on_complete_cw20() {}
-
-#[test]
-fn test_release_on_complete_mixed() {}
-
 #[test]
 // receive cw20 tokens and release upon approval
-fn escrow_happy_path_cw20() {
+fn test_escrow_lifecycle_cw20() {
     const NATIVE_TOKEN_DENOM: &str = "juno";
     const ARBITER: &str = "arbiter";
     const RECIPIENT: &str = "recipient";
@@ -393,7 +192,7 @@ fn escrow_happy_path_cw20() {
 
 #[test]
 // receive cw20 tokens and release upon approval
-fn test_instantiate_create_escrow_native() {
+fn test_escrow_lifecycle_native() {
     const NATIVE_TOKEN_DENOM: &str = "juno";
     const ARBITER: &str = "arbiter";
     const RECIPIENT: &str = "recipient";

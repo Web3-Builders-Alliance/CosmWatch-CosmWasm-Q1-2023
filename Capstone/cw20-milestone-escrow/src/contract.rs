@@ -367,7 +367,7 @@ pub fn execute_refund(
         ESCROWS.remove(deps.storage, &id);
 
         // send all tokens out
-        let messages = send_tokens(&escrow.source, &escrow.balance)?;
+        let messages = send_tokens(&escrow.source, &escrow.get_remaining_balance())?;
 
         Ok(Response::new()
             .add_attribute("action", "refund")
@@ -393,13 +393,16 @@ fn execute_approve(
         return Err(ContractError::Expired {});
     }
 
-    let recipient = escrow.recipient.ok_or(ContractError::RecipientNotSet {})?;
+    let recipient = escrow
+        .clone()
+        .recipient
+        .ok_or(ContractError::RecipientNotSet {})?;
 
     // we delete the escrow
     ESCROWS.remove(deps.storage, &id);
 
     // send all tokens out
-    let messages: Vec<SubMsg> = send_tokens(&recipient, &escrow.balance)?;
+    let messages: Vec<SubMsg> = send_tokens(&recipient, &escrow.get_remaining_balance())?;
 
     Ok(messages)
 }
