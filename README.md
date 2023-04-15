@@ -2,7 +2,7 @@
 
 ## 🏆 [Capstone](./Capstone/)
 
-- W3BA Task Marketplace
+- W3BA Task Marketplace ([Demo Video](https://www.youtube.com/watch?v=lzwMiCIeUDo))
 
 ## 🔖 [PreReqs](./PreReqs/)
 
